@@ -1,6 +1,7 @@
 export interface AverzianDamageEvent {
   timestamp: number;
   targetName: string;
+  targetClass?: string;
   amount: number;
   mitigated?: number;
 }

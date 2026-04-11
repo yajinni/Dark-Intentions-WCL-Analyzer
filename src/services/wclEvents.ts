@@ -6,7 +6,7 @@ import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
 export const fetchRaidRoster = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
   
-  // Fetch table data (player names) and fight data (IDs)
+  // Fetch table data (player names/classes) and fight data (IDs)
   const [tableData, fightsData] = await Promise.all([
     sdk.getReportTable({
       code: reportId,
@@ -24,15 +24,18 @@ export const fetchRaidRoster = async (accessToken: string, reportId: string, fig
   
   const table = tableData.reportData?.report?.table;
   const entries = table?.entries || table?.data?.entries || [];
-  const actorMap: Record<number, string> = {};
-  entries.forEach((e: any) => actorMap[e.id] = e.name);
+  const actorMap: Record<number, any> = {};
+  entries.forEach((e: any) => {
+    if (e.id) actorMap[e.id] = e;
+  });
 
   const fight = fightsData.reportData?.report?.fights?.[0];
   const playerIds = fight?.friendlyPlayers || [];
   
   return playerIds.map((id: any) => ({
     id: id,
-    name: actorMap[id] || `Unknown (${id})`
+    name: actorMap[id]?.name || `Unknown (${id})`,
+    class: actorMap[id]?.type // In DamageDone entries, 'type' is the class
   }));
 };
 
@@ -50,7 +53,7 @@ export const fetchAverzianDamageEvents = async (accessToken: string, reportId: s
   
   const events = data.reportData?.report?.events?.data || [];
   
-  // We need character names, but events only give targetID. 
+  // Get actor info from the table to map ID to Name and Class
   const tableData = await sdk.getReportTable({
     code: reportId,
     fightIds: [fightId],
@@ -59,12 +62,15 @@ export const fetchAverzianDamageEvents = async (accessToken: string, reportId: s
   
   const table = tableData.reportData?.report?.table;
   const entries = table?.entries || table?.data?.entries || [];
-  const idToName: Record<number, string> = {};
-  entries.forEach((e: any) => idToName[e.id] = e.name);
+  const actorMap: Record<number, any> = {};
+  entries.forEach((e: any) => {
+    if (e.id) actorMap[e.id] = e;
+  });
 
   return events.map((e: any) => ({
     timestamp: e.timestamp,
-    targetName: idToName[e.targetID] || `Unknown (${e.targetID})`,
+    targetName: actorMap[e.targetID]?.name || `Unknown (${e.targetID})`,
+    targetClass: actorMap[e.targetID]?.type,
     amount: e.amount || 0,
     mitigated: e.mitigated || 0
   }));

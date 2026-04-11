@@ -91,6 +91,28 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
     };
   };
 
+  const getClassColor = (className?: string) => {
+    if (!className) return 'var(--text-color)';
+    const colors: Record<string, string> = {
+      'Warrior': '#C79C6E',
+      'Paladin': '#F58CBA',
+      'Hunter': '#ABD473',
+      'Rogue': '#FFF569',
+      'Priest': '#FFFFFF',
+      'DeathKnight': '#C41F3B',
+      'Shaman': '#0070DE',
+      'Mage': '#3FC7EB',
+      'Warlock': '#8787ED',
+      'Monk': '#00FF96',
+      'Druid': '#FF7D0A',
+      'DemonHunter': '#A330C9',
+      'Evoker': '#33937F'
+    };
+    // WCL might return subType as "Death Knight" or "Demon Hunter"
+    const normalized = className.replace(/\s+/g, '');
+    return colors[normalized] || 'var(--text-color)';
+  };
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-20">
       <div className="loading-spinner"></div>
@@ -224,7 +246,12 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
                             <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                               {soak.events.map((event, eIdx) => (
                                 <div key={eIdx} className="p-2 bg-black/40 rounded border border-white/5 flex items-center justify-between">
-                                  <span className="text-xs font-bold text-gray-300 truncate pr-2">{event.targetName}</span>
+                                  <span 
+                                    className="text-xs font-bold truncate pr-2"
+                                    style={{ color: getClassColor(event.targetClass) }}
+                                  >
+                                    {event.targetName}
+                                  </span>
                                   <span className="text-[10px] font-mono font-bold text-emerald-400">{event.amount.toLocaleString()}</span>
                                 </div>
                               ))}
