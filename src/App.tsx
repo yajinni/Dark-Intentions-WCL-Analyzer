@@ -205,15 +205,20 @@ function App() {
                           <h4>{fight.name}</h4>
                           <div className="fight-meta">
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Target size={14} /> {fight.difficulty === 3 ? 'Heroic' : fight.difficulty === 4 ? 'Mythic' : 'Normal'}
+                              <Target size={14} /> {
+                                fight.difficulty === 5 ? 'Mythic' : 
+                                fight.difficulty === 4 ? 'Heroic' : 
+                                fight.difficulty === 3 ? 'Normal' : 
+                                fight.difficulty === 1 ? 'LFR' : 'Normal'
+                              }
                             </span>
                             <span style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '12px' }}>
-                              <Clock size={14} /> {formatDuration(fight.start_time, fight.end_time)}
+                              <Clock size={14} /> {formatDuration(fight.startTime, fight.endTime)}
                             </span>
                           </div>
                         </div>
                         <span className={`status-badge ${fight.kill ? 'status-kill' : 'status-wipe'}`}>
-                          {fight.kill ? 'Kill' : `Wipe (${Math.floor(fight.fightPercentage / 100)}%)`}
+                          {fight.kill ? 'Kill' : `Wipe (${(fight.bossPercentage / 100).toFixed(1)}%)`}
                         </span>
                       </div>
                     </div>
