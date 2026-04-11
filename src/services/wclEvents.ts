@@ -18,23 +18,23 @@ export const fetchDamageDoneEvents = async (accessToken: string, reportId: strin
   const data = await sdk.getReportEvents({
     code: reportId,
     fightIds: [fightId],
-    dataType: 'DamageDone' as any,
-    // We limit to Boss and known important adds to keep payload manageable
-    filterExpression: 'target.name in ("Imperator Averzian", "Abyssal Voidshaper", "Voidmaw", "Shadowguard Stalwart", "Annihilator")'
+    dataType: 'DamageDone' as any
   });
+  
   return data.reportData?.report?.events?.data || [];
 };
 
 export const fetchActorMapping = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
-  // Fetch DamageDone table to get the mapping of names to IDs
   const data = await sdk.getReportTable({
     code: reportId,
     fightIds: [fightId],
     dataType: 'DamageDone' as any
   });
   
-  const entries = data.reportData?.report?.table?.entries || [];
+  const table = data.reportData?.report?.table;
+  // Handle both possible structures: table.entries or table.data.entries
+  const entries = table?.entries || table?.data?.entries || [];
   const mapping: Record<string, number> = {};
   
   entries.forEach((entry: any) => {

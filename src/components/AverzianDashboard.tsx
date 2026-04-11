@@ -28,13 +28,29 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
         fetchActorMapping(accessToken, reportId, fightId)
       ]);
 
-      const bossId = actorMap["Imperator Averzian"];
-      const addIds = new Set([
-        actorMap["Abyssal Voidshaper"],
-        actorMap["Voidmaw"],
-        actorMap["Shadowguard Stalwart"],
-        actorMap["Annihilator"]
-      ].filter(id => id !== undefined));
+      const findIdByFuzzyName = (names: string[]) => {
+        const entry = Object.entries(actorMap).find(([actorName]) => 
+          names.some(n => actorName.toLowerCase().includes(n.toLowerCase()))
+        );
+        return entry ? (entry[1] as number) : undefined;
+      };
+
+      let bossId = findIdByFuzzyName(["Imperator Averzian", "Averzian"]);
+      
+      // Fallback: If no boss is found by name, pick the NPC with most damage taken
+      if (!bossId) {
+        const mostDamaged = Object.entries(actorMap)
+          .sort((a, b) => (b[1] as any).total - (a[1] as any).total)[0];
+        if (mostDamaged) bossId = mostDamaged[1] as number;
+      }
+
+      const addKeywords = ["Voidshaper", "Voidmaw", "Shadowguard", "Annihilator", "Void"];
+      const addIds = new Set<number>();
+      Object.entries(actorMap).forEach(([name, id]) => {
+        if (addKeywords.some(k => name.toLowerCase().includes(k.toLowerCase())) && id !== bossId) {
+          addIds.add(id as number);
+        }
+      });
 
       // 1. Process Soak Waves
       const soakWaves: SoakWave[] = [];
