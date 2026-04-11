@@ -139,35 +139,35 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       </div>
 
       {/* Soak List */}
-      <div className="space-y-3">
+      <div className="space-y-1">
         {result.sets.flatMap(set => set.soaks).map((soak, sIdx) => {
           return (
             <div 
               key={`soak-${sIdx}`} 
-              className="glass-panel overflow-hidden transition-all duration-300 border border-white/5 hover:border-purple-500/30 hover:bg-white/[0.02] p-5"
+              className="glass-panel py-2 px-6 flex items-center hover:bg-white/[0.04] transition-colors border border-white/5"
             >
-              <div className="flex items-center w-full">
-                {/* Left: Timestamp */}
-                <div className="w-24 shrink-0 flex items-center gap-2">
-                  <span className="font-mono text-gray-400 font-bold bg-black/40 px-2 py-1 rounded text-xs border border-white/5">
-                    +{formatTime(soak.timestamp - fightStartTime)}
-                  </span>
-                </div>
+              {/* Timestamp + Tab */}
+              <div className="w-16 shrink-0 font-mono text-gray-500 font-bold text-xs">
+                +{formatTime(soak.timestamp - fightStartTime)}
+              </div>
+              
+              {/* Spacing (Tab) */}
+              <div className="w-12 shrink-0"></div>
 
-                {/* Center: Title */}
-                <div className="flex-1 px-8">
-                  <span className="text-lg font-bold text-gray-100 uppercase tracking-tight">Soak {sIdx + 1}</span>
-                </div>
+              {/* Title + Tab */}
+              <div className="w-24 shrink-0">
+                <span className="text-sm font-bold text-gray-300 uppercase tracking-tight">Soak {sIdx + 1}</span>
+              </div>
 
-                {/* Right: Avg Damage */}
-                <div className="flex items-center">
-                  <div className="text-right">
-                    <div className="text-[10px] uppercase text-gray-500 font-black leading-none mb-1">Avg hit</div>
-                    <div className="text-xl font-mono font-bold text-emerald-400 tracking-tighter">
-                      {soak.averageDamage.toLocaleString()}
-                    </div>
-                  </div>
-                </div>
+              {/* Spacing (Tab) */}
+              <div className="w-12 shrink-0"></div>
+
+              {/* Avg Damage */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase text-gray-600 font-black tracking-widest">Avg Hit</span>
+                <span className="text-sm font-mono font-bold text-emerald-400">
+                  {soak.averageDamage.toLocaleString()}
+                </span>
               </div>
             </div>
           );
