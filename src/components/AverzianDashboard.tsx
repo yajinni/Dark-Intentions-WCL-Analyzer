@@ -114,6 +114,15 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
     return colors[normalized] || 'var(--text-color)';
   };
 
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.round(ms / 1000);
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-20">
       <div className="loading-spinner"></div>
@@ -203,7 +212,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
                 <div>
                   <div className="text-lg font-bold text-gray-200">{set.soaks.length} Phase Waves</div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span className="flex items-center gap-1"><Clock size={12} /> +{Math.round((set.startTime - fightStartTime) / 1000)}s</span>
+                    <span className="flex items-center gap-1"><Clock size={12} /> +{formatTime(set.startTime - fightStartTime)}</span>
                     <span className="flex items-center gap-1"><Shield size={12} /> {(set.totalDamage / 1000000).toFixed(2)}M damage</span>
                   </div>
                 </div>
@@ -230,7 +239,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
                           }}
                         >
                           <div className="flex items-center gap-4 text-sm">
-                            <span className="font-mono text-gray-500 font-bold">+{Math.round((soak.timestamp - fightStartTime) / 1000)}s</span>
+                            <span className="font-mono text-gray-500 font-bold">+{formatTime(soak.timestamp - fightStartTime)}</span>
                             <span className="text-gray-200">Soak Hit # {sIdx + 1}</span>
                             <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full uppercase">
                               {soak.events.length} Hit
