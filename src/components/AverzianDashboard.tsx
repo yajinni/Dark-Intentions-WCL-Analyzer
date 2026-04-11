@@ -136,55 +136,102 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
     return addEvents.some((e: any) => Math.abs(e.timestamp - timestamp) < ADD_WINDOW_MS);
   };
 
-  if (loading) return <div className="loading-spinner"></div>;
-  if (!result) return <div>Failed to analyze encounter.</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center p-20">
+      <div className="loading-spinner"></div>
+      <p className="mt-4 text-purple-400 animate-pulse">Analyzing encounter data...</p>
+    </div>
+  );
+
+  if (!result) return (
+    <div className="glass-panel p-10 text-center">
+      <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+      <h3 className="text-xl font-bold">Analysis Unavailable</h3>
+      <p className="text-gray-400">We couldn't resolve the encounter details. Please ensure the fight is correctly recorded.</p>
+    </div>
+  );
 
   return (
-    <div className="averzian-analyzer" style={{ animation: 'fadeIn 0.5s ease-out' }}>
-      <div className="section-header" style={{ marginBottom: '40px' }}>
-        <h2 style={{ color: 'var(--accent-color)', fontSize: '2rem' }}>Imperator Averzian Insights</h2>
-        <p>Detailed performance breakdown for Soak mechanics and Add priority.</p>
+    <div className="averzian-analyzer space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Hero Header */}
+      <div className="glass-panel p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
+        <div className="relative z-10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="h-px w-8 bg-accent-color"></div>
+            <span className="text-accent-color uppercase tracking-widest text-xs font-bold">Combat Insight</span>
+          </div>
+          <h2 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
+            Imperator Averzian
+          </h2>
+          <p className="text-gray-400 mt-2 max-w-2xl">
+            Mechanics audit focusing on grid soaking efficiency and target priority execution during priority add phases.
+          </p>
+        </div>
       </div>
 
-      <div className="analyzer-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-        {/* Soak Analysis */}
-        <div className="glass-panel" style={{ padding: '30px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <Shield className="text-primary" size={24} color="var(--primary-color)" />
-            <h3 style={{ margin: 0 }}>Umbral Collapse Soaking</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Soak Analysis Card */}
+        <div className="glass-panel p-6 border-l-4 border-l-primary-color">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <Shield className="text-primary-color" size={24} />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold">Umbral Collapse</h3>
+                <p className="text-xs text-gray-400">Soak distribution audit</p>
+              </div>
+            </div>
           </div>
           
-          <div className="soak-list">
-            {result.soakWaves.map((wave, index) => (
-              <div key={index} className="soak-row" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '15px 0' }}>
+          <div className="space-y-4">
+            {result.soakWaves.length === 0 ? (
+              <div className="text-center py-10 text-gray-500 italic">No soak events detected in this window.</div>
+            ) : result.soakWaves.map((wave, index) => (
+              <div 
+                key={index} 
+                className={`group transition-all duration-300 rounded-xl border ${expandedSoak === index ? 'bg-white/5 border-purple-500/30' : 'bg-black/20 border-white/5 hover:border-white/10'}`}
+              >
                 <div 
-                  style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}
+                  className="p-4 flex items-center justify-between cursor-pointer"
                   onClick={() => setExpandedSoak(expandedSoak === index ? null : index)}
                 >
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Wave {index + 1}</span>
-                    <div style={{ fontWeight: 600 }}>{wave.soakers.length} Soakers</div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-black/40 border border-white/10">
+                      <span className="text-xs text-gray-500 font-bold">W</span>
+                      <span className="text-sm font-bold text-white">{index + 1}</span>
+                    </div>
+                    <div>
+                      <div className="text-sm font-bold text-gray-200">{wave.soakers.length} Players Soaked</div>
+                      <div className="text-xs text-gray-500">Avg. Damage: <span className="text-accent-color">{wave.averageDamage.toLocaleString()}</span></div>
+                    </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: 'var(--accent-color)' }}>Avg: {wave.averageDamage.toLocaleString()}</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Total: {wave.totalDamage.toLocaleString()}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: '15px' }}>
-                    {expandedSoak === index ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right hidden sm:block">
+                      <div className="text-xs text-gray-500 uppercase tracking-tighter">Impact Time</div>
+                      <div className="text-sm text-gray-300 font-mono">+{Math.round(wave.timestamp / 1000)}s</div>
+                    </div>
+                    {expandedSoak === index ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
                   </div>
                 </div>
 
                 {expandedSoak === index && (
-                  <div style={{ marginTop: '15px', padding: '15px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', animation: 'fadeIn 0.3s ease' }}>
-                    <h4 style={{ fontSize: '0.9rem', color: '#ef4444', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <AlertCircle size={14} /> Did Not Soak ({wave.missedPlayers.length})
-                    </h4>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                      {wave.missedPlayers.map(p => (
-                        <span key={p} style={{ fontSize: '0.8rem', padding: '4px 8px', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', borderRadius: '4px' }}>
-                          {p}
+                  <div className="px-4 pb-4 animate-in slide-in-from-top-2 duration-300">
+                    <div className="h-px bg-white/5 mb-4"></div>
+                    <div className="space-y-4">
+                      <div className="flex flex-col gap-2">
+                        <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wider">
+                          <AlertCircle size={12} /> Missed Soak ({wave.missedPlayers.length})
                         </span>
-                      ))}
+                        <div className="flex flex-wrap gap-2">
+                          {wave.missedPlayers.map(p => (
+                            <span key={p} className="text-[10px] sm:text-xs px-2.5 py-1 bg-red-500/10 text-red-300 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-colors">
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -193,49 +240,58 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
           </div>
         </div>
 
-        {/* Tunneling Analysis */}
-        <div className="glass-panel" style={{ padding: '30px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-            <Target className="text-accent" size={24} color="var(--accent-color)" />
-            <h3 style={{ margin: 0 }}>Add Priority (Boss Tunneling)</h3>
+        {/* Tunneling Analysis Card */}
+        <div className="glass-panel p-6 border-l-4 border-l-accent-color">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="p-2 bg-yellow-500/10 rounded-lg">
+              <Target className="text-accent-color" size={24} />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold">Add Priority & Focus</h3>
+              <p className="text-xs text-gray-400">Boss tunneling metrics during active adds</p>
+            </div>
           </div>
           
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                <th style={{ paddingBottom: '10px' }}>Player</th>
-                <th style={{ paddingBottom: '10px' }}>Boss Dmg (during Adds)</th>
-                <th style={{ paddingBottom: '10px' }}>Add Dmg</th>
-                <th style={{ paddingBottom: '10px' }}>Tunneling %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.tunnelingPlayers.slice(0, 10).map((player, index) => (
-                <tr key={index} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
-                  <td style={{ padding: '12px 0', fontWeight: 600 }}>{player.playerName}</td>
-                  <td style={{ padding: '12px 0' }}>{player.bossDamage.toLocaleString()}</td>
-                  <td style={{ padding: '12px 0' }}>{player.addDamage.toLocaleString()}</td>
-                  <td style={{ padding: '12px 0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ 
-                          width: `${player.tunnelingScore}%`, 
-                          height: '100%', 
-                          background: player.tunnelingScore > 70 ? '#ef4444' : player.tunnelingScore > 40 ? '#f59e0b' : '#10b981' 
-                        }}></div>
-                      </div>
-                      <span style={{ minWidth: '40px', textAlign: 'right', fontWeight: 700 }}>{player.tunnelingScore}%</span>
-                    </div>
-                  </td>
+          <div className="overflow-hidden">
+            <table className="w-100 border-separate border-spacing-y-3">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-widest text-gray-500">
+                  <th className="pb-2 font-black pl-2">Raid Member</th>
+                  <th className="pb-2 font-black">Execution</th>
+                  <th className="pb-2 text-right pr-2 font-black">Score</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-          {result.tunnelingPlayers.length > 10 && (
-            <p style={{ marginTop: '20px', fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-              Showing top 10 players by boss focus.
-            </p>
-          )}
+              </thead>
+              <tbody>
+                {result.tunnelingPlayers.slice(0, 8).map((player, index) => (
+                  <tr key={index} className="group odd:bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-200">
+                    <td className="py-3 pl-3">
+                      <div className="font-bold text-sm text-gray-200">{player.playerName}</div>
+                      <div className="text-[10px] text-gray-500">Boss: {(player.bossDamage / 1000000).toFixed(1)}M | Adds: {(player.addDamage / 1000000).toFixed(1)}M</div>
+                    </td>
+                    <td className="py-3 w-32 min-w-[120px]">
+                      <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
+                        <div 
+                          className={`h-full transition-all duration-1000 ease-out rounded-full ${player.tunnelingScore > 70 ? 'bg-gradient-to-r from-red-600 to-red-400 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : player.tunnelingScore > 40 ? 'bg-gradient-to-r from-orange-500 to-yellow-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'}`}
+                          style={{ width: `${player.tunnelingScore}%` }}
+                        ></div>
+                      </div>
+                    </td>
+                    <td className="py-3 text-right pr-3 font-mono font-bold">
+                      <span className={player.tunnelingScore > 75 ? 'text-red-400' : player.tunnelingScore > 40 ? 'text-yellow-400' : 'text-emerald-400'}>
+                        {player.tunnelingScore}%
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {result.tunnelingPlayers.length > 8 && (
+              <div className="mt-6 flex items-center justify-between px-2">
+                <span className="text-[10px] text-gray-600 italic">Showing top 8 contributors to focus variance.</span>
+                <span className="text-[10px] text-purple-400/60 font-bold uppercase tracking-widest cursor-pointer hover:text-purple-400">View Full Roster</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
