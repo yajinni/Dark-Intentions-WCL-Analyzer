@@ -9,7 +9,6 @@ export interface AverzianDamageEvent {
 export interface Soak {
   timestamp: number; // The representitive timestamp (first event in group)
   events: AverzianDamageEvent[];
-  missedPlayers: { name: string; class?: string }[];
   totalDamage: number;
   averageDamage: number;
 }
