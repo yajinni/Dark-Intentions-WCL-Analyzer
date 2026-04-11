@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { fetchAverzianDamageEvents } from '../services/wclEvents';
+import { fetchAverzianDamageEvents, fetchRaidRoster } from '../services/wclEvents';
 import type { AverzianAnalysisResult, Soak, SoakSet, AverzianDamageEvent } from '../types/analyzer';
-import { Shield, AlertCircle, Clock, ChevronDown, ChevronUp, Activity, Layers } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronUp, Layers } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -22,7 +22,10 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       setLoading(true);
       setError(null);
       try {
-        const events = await fetchAverzianDamageEvents(accessToken, reportId, fightId);
+        const [events, roster] = await Promise.all([
+          fetchAverzianDamageEvents(accessToken, reportId, fightId),
+          fetchRaidRoster(accessToken, reportId, fightId)
+        ]);
         
         const soaks: Soak[] = [];
         const SOAK_GAP_MS = 1000;
@@ -33,13 +36,13 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           
           events.forEach((event: AverzianDamageEvent) => {
             if (event.timestamp - lastTimestamp > SOAK_GAP_MS && currentSoakEvents.length > 0) {
-              soaks.push(createSoak(currentSoakEvents));
+              soaks.push(createSoak(currentSoakEvents, roster));
               currentSoakEvents = [];
             }
             currentSoakEvents.push(event);
             lastTimestamp = event.timestamp;
           });
-          if (currentSoakEvents.length > 0) soaks.push(createSoak(currentSoakEvents));
+          if (currentSoakEvents.length > 0) soaks.push(createSoak(currentSoakEvents, roster));
         }
 
         const sets: SoakSet[] = [];
@@ -72,11 +75,18 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
     analyze();
   }, [accessToken, reportId, fightId]);
 
-  const createSoak = (events: AverzianDamageEvent[]): Soak => {
+  const createSoak = (events: AverzianDamageEvent[], roster: any[]): Soak => {
     const total = events.reduce((sum, e) => sum + e.amount, 0);
+    const soakers = new Set(events.map(e => e.targetName));
+    
+    const missedPlayers = roster
+      .filter(p => !soakers.has(p.name))
+      .map(p => ({ name: p.name, class: p.class }));
+
     return {
       timestamp: events[0].timestamp,
       events,
+      missedPlayers,
       totalDamage: total,
       averageDamage: Math.round(total / (events.length || 1))
     };
@@ -109,7 +119,6 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       'DemonHunter': '#A330C9',
       'Evoker': '#33937F'
     };
-    // WCL might return subType as "Death Knight" or "Demon Hunter"
     const normalized = className.replace(/\s+/g, '');
     return colors[normalized] || 'var(--text-color)';
   };
@@ -126,14 +135,14 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-20">
       <div className="loading-spinner"></div>
-      <p className="mt-4 text-purple-400 animate-pulse">Building encounter hierarchy...</p>
+      <p className="mt-4 text-purple-400 animate-pulse">Analyzing soak performance...</p>
     </div>
   );
 
   if (error) return (
     <div className="glass-panel p-10 text-center border-red-500/50">
       <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
-      <h3 className="text-xl font-bold text-red-400">Analysis Error</h3>
+      <h3 className="text-xl font-bold text-red-400">Audit Error</h3>
       <p className="text-gray-400">{error}</p>
     </div>
   );
@@ -146,54 +155,21 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
     </div>
   );
 
-  const totalDamage = result.sets.reduce((sum, s) => sum + s.totalDamage, 0);
-  const totalSoaks = result.sets.reduce((sum, s) => sum + s.soaks.length, 0);
-
   return (
-    <div className="averzian-analyzer space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="averzian-analyzer space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="glass-panel p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
             <div className="h-px w-8 bg-accent-color"></div>
-            <span className="text-accent-color uppercase tracking-widest text-xs font-bold">Encouter Hierarchy</span>
+            <span className="text-accent-color uppercase tracking-widest text-xs font-bold">Mechanical Audit</span>
           </div>
           <h2 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
-            Umbral Collapse Sets
+            Umbral Collapse Soak Analysis
           </h2>
           <p className="text-gray-400 mt-2 max-w-2xl">
-            Grouped analysis of mechanical waves. Hits at the same second form a <strong>Soak</strong>, and soaks within 15 seconds form a <strong>Set</strong>.
+            Identifying missed individual soaks. Expanded views show only players who failed to contribute to the mechanic.
           </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass-panel p-4 flex items-center gap-4 border-l-4 border-l-purple-500 hover:bg-white/[0.02] transition-colors">
-          <div className="p-3 bg-purple-500/10 rounded-xl">
-            <Layers className="text-purple-400" size={24} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 uppercase font-black tracking-tighter">Total Sets</div>
-            <div className="text-2xl font-bold">{result.sets.length}</div>
-          </div>
-        </div>
-        <div className="glass-panel p-4 flex items-center gap-4 border-l-4 border-l-blue-500 hover:bg-white/[0.02] transition-colors">
-          <div className="p-3 bg-blue-500/10 rounded-xl">
-            <Activity className="text-blue-400" size={24} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 uppercase font-black tracking-tighter">Total Soaks</div>
-            <div className="text-2xl font-bold">{totalSoaks}</div>
-          </div>
-        </div>
-        <div className="glass-panel p-4 flex items-center gap-4 border-l-4 border-l-emerald-500 hover:bg-white/[0.02] transition-colors">
-          <div className="p-3 bg-emerald-500/10 rounded-xl">
-            <Shield className="text-emerald-400" size={24} />
-          </div>
-          <div>
-            <div className="text-xs text-gray-500 uppercase font-black tracking-tighter">Total Taken</div>
-            <div className="text-2xl font-bold">{(totalDamage / 1000000).toFixed(1)}M</div>
-          </div>
         </div>
       </div>
 
@@ -201,20 +177,16 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
         {result.sets.map((set) => (
           <div key={set.id} className="glass-panel overflow-hidden border-white/5 transition-all duration-300">
             <div 
-              className={`p-6 flex items-center justify-between cursor-pointer transition-colors ${expandedSet === set.id ? 'bg-white/5' : 'hover:bg-white/[0.02]'}`}
+              className={`p-5 flex items-center justify-between cursor-pointer transition-colors ${expandedSet === set.id ? 'bg-white/5' : 'hover:bg-white/[0.02]'}`}
               onClick={() => setExpandedSet(expandedSet === set.id ? null : set.id)}
             >
               <div className="flex items-center gap-6">
-                <div className="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20">
-                  <span className="text-[10px] text-purple-400 font-black uppercase">Set</span>
-                  <span className="text-xl font-bold text-white leading-none">{set.id}</span>
+                <div className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-accent-color/10 border border-accent-color/20">
+                  <Layers className="text-accent-color" size={18} />
                 </div>
                 <div>
-                  <div className="text-lg font-bold text-gray-200">{set.soaks.length} Phase Waves</div>
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span className="flex items-center gap-1"><Clock size={12} /> +{formatTime(set.startTime - fightStartTime)}</span>
-                    <span className="flex items-center gap-1"><Shield size={12} /> {(set.totalDamage / 1000000).toFixed(2)}M damage</span>
-                  </div>
+                  <div className="text-xl font-bold text-gray-100">Umbral Collapse Set {set.id}</div>
+                  <div className="text-xs text-gray-500 font-medium">Started at {formatTime(set.startTime - fightStartTime)}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -223,49 +195,62 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
             </div>
 
             {expandedSet === set.id && (
-              <div className="p-6 pt-0 border-t border-white/5 bg-black/20 animate-in slide-in-from-top-2 duration-300">
-                <div className="mt-6 space-y-3">
+              <div className="p-5 pt-0 border-t border-white/5 bg-black/30 animate-in slide-in-from-top-2 duration-300">
+                <div className="mt-4 space-y-2 ml-4">
                   {set.soaks.map((soak, sIdx) => {
                     const soakKey = `${set.id}-${sIdx}`;
                     const isSoakExpanded = expandedSoak === soakKey;
                     
                     return (
-                      <div key={soakKey} className="rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden transition-all duration-300">
+                      <div key={soakKey} className="rounded-lg border border-white/5 bg-white/[0.01] overflow-hidden transition-all duration-300">
                         <div 
-                          className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${isSoakExpanded ? 'bg-white/5' : 'hover:bg-white/[0.02]'}`}
+                          className={`p-3 flex items-center justify-between cursor-pointer transition-colors ${isSoakExpanded ? 'bg-white/5' : 'hover:bg-white/[0.01]'}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             setExpandedSoak(isSoakExpanded ? null : soakKey);
                           }}
                         >
-                          <div className="flex items-center gap-4 text-sm">
-                            <span className="font-mono text-gray-500 font-bold">+{formatTime(soak.timestamp - fightStartTime)}</span>
-                            <span className="text-gray-200">Soak Hit # {sIdx + 1}</span>
-                            <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full uppercase">
-                              {soak.events.length} Hit
-                            </span>
+                          <div className="flex items-center text-sm w-full">
+                            <span className="font-mono text-gray-500 font-bold w-16">+{formatTime(soak.timestamp - fightStartTime)}</span>
+                            <span className="text-gray-300 font-bold ml-8">Soak {sIdx + 1}</span>
+                            
+                            <div className="ml-auto flex items-center gap-10">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded border border-blue-400/20">
+                                  {soak.events.length}
+                                </span>
+                                <span className="text-[10px] uppercase text-gray-500 font-bold">Players Soaked</span>
+                              </div>
+                              <span className="text-xs font-bold text-accent-color">Avg: {soak.averageDamage.toLocaleString()}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs font-bold text-accent-color">Avg: {soak.averageDamage.toLocaleString()}</span>
+                          <div className="ml-6">
                             {isSoakExpanded ? <ChevronUp size={14} className="text-gray-500" /> : <ChevronDown size={14} className="text-gray-500" />}
                           </div>
                         </div>
 
                         {isSoakExpanded && (
-                          <div className="p-3 pt-0 border-t border-white/5 animate-in slide-in-from-top-1 duration-200">
-                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                              {soak.events.map((event, eIdx) => (
-                                <div key={eIdx} className="p-2 bg-black/40 rounded border border-white/5 flex items-center justify-between">
-                                  <span 
-                                    className="text-xs font-bold truncate pr-2"
-                                    style={{ color: getClassColor(event.targetClass) }}
-                                  >
-                                    {event.targetName}
-                                  </span>
-                                  <span className="text-[10px] font-mono font-bold text-emerald-400">{event.amount.toLocaleString()}</span>
-                                </div>
-                              ))}
+                          <div className="p-4 bg-red-500/5 border-t border-red-500/10 animate-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center gap-2 mb-3 text-red-400">
+                              <AlertCircle size={14} />
+                              <span className="text-xs font-black uppercase tracking-widest">Missed Soakers ({soak.missedPlayers.length})</span>
                             </div>
+                            {soak.missedPlayers.length === 0 ? (
+                              <p className="text-xs text-gray-500 italic">No failures detected. Everyone soaked!</p>
+                            ) : (
+                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                {soak.missedPlayers.map((player, pIdx) => (
+                                  <div key={pIdx} className="p-2 bg-black/40 rounded border border-white/5">
+                                    <span 
+                                      className="text-xs font-bold truncate block"
+                                      style={{ color: getClassColor(player.class) }}
+                                    >
+                                      {player.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
