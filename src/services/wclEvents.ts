@@ -5,22 +5,34 @@ import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
  */
 export const fetchRaidRoster = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
-  const data = await sdk.getReportFights({
-    code: reportId,
-    fightIds: [fightId],
-    includePlayers: true,
-    includeNpcs: false,
-    includeDungeonPulls: false
-  });
   
-  const fight = data.reportData?.report?.fights?.[0];
-  const players = fight?.friendlyPlayers || [];
+  // Fetch table data (player names) and fight data (IDs)
+  const [tableData, fightsData] = await Promise.all([
+    sdk.getReportTable({
+      code: reportId,
+      fightIds: [fightId],
+      dataType: 'DamageDone' as any
+    }),
+    sdk.getReportFights({
+      code: reportId,
+      fightIds: [fightId],
+      includePlayers: true,
+      includeNpcs: false,
+      includeDungeonPulls: false
+    })
+  ]);
   
-  return players.map((p: any) => ({
-    id: p.id,
-    name: p.name,
-    type: p.type,
-    icon: p.icon
+  const table = tableData.reportData?.report?.table;
+  const entries = table?.entries || table?.data?.entries || [];
+  const actorMap: Record<number, string> = {};
+  entries.forEach((e: any) => actorMap[e.id] = e.name);
+
+  const fight = fightsData.reportData?.report?.fights?.[0];
+  const playerIds = fight?.friendlyPlayers || [];
+  
+  return playerIds.map((id: any) => ({
+    id: id,
+    name: actorMap[id] || `Unknown (${id})`
   }));
 };
 
@@ -39,10 +51,16 @@ export const fetchAverzianDamageEvents = async (accessToken: string, reportId: s
   const events = data.reportData?.report?.events?.data || [];
   
   // We need character names, but events only give targetID. 
-  // We'll fetch the roster as well to map IDs to names.
-  const roster = await fetchRaidRoster(accessToken, reportId, fightId);
+  const tableData = await sdk.getReportTable({
+    code: reportId,
+    fightIds: [fightId],
+    dataType: 'DamageDone' as any
+  });
+  
+  const table = tableData.reportData?.report?.table;
+  const entries = table?.entries || table?.data?.entries || [];
   const idToName: Record<number, string> = {};
-  roster.forEach(p => idToName[p.id] = p.name);
+  entries.forEach((e: any) => idToName[e.id] = e.name);
 
   return events.map((e: any) => ({
     timestamp: e.timestamp,
