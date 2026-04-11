@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { fetchAverzianDamageEvents } from '../services/wclEvents';
 import type { AverzianAnalysisResult } from '../types/analyzer';
-import { Shield, AlertCircle, Clock, Users } from 'lucide-react';
+import { Shield, AlertCircle, Clock } from 'lucide-react';
 
 interface Props {
   accessToken: string;
