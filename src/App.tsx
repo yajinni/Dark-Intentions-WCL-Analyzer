@@ -232,6 +232,7 @@ function App() {
                         accessToken={accessToken!} 
                         reportId={reportId!} 
                         fightId={selectedFight.id} 
+                        fightStartTime={selectedFight.startTime}
                       />
                     ) : (
                       <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>

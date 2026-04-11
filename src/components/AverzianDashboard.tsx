@@ -7,9 +7,10 @@ interface Props {
   accessToken: string;
   reportId: string;
   fightId: number;
+  fightStartTime: number;
 }
 
-const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) => {
+const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fightStartTime }) => {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<AverzianAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +203,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
                 <div>
                   <div className="text-lg font-bold text-gray-200">{set.soaks.length} Phase Waves</div>
                   <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span className="flex items-center gap-1"><Clock size={12} /> +{Math.round((set.startTime - result.sets[0].startTime) / 1000)}s</span>
+                    <span className="flex items-center gap-1"><Clock size={12} /> +{Math.round((set.startTime - fightStartTime) / 1000)}s</span>
                     <span className="flex items-center gap-1"><Shield size={12} /> {(set.totalDamage / 1000000).toFixed(2)}M damage</span>
                   </div>
                 </div>
@@ -229,7 +230,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
                           }}
                         >
                           <div className="flex items-center gap-4 text-sm">
-                            <span className="font-mono text-gray-500 font-bold">+{Math.round((soak.timestamp - result.sets[0].startTime) / 1000)}s</span>
+                            <span className="font-mono text-gray-500 font-bold">+{Math.round((soak.timestamp - fightStartTime) / 1000)}s</span>
                             <span className="text-gray-200">Soak Hit # {sIdx + 1}</span>
                             <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-full uppercase">
                               {soak.events.length} Hit
