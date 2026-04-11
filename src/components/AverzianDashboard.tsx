@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { fetchSoakEvents, fetchRaidRoster, fetchActorMapping } from '../services/wclEvents';
-import type { SoakWave, AverzianAnalysisResult } from '../types/analyzer';
-import { Shield, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { fetchAverzianDamageEvents } from '../services/wclEvents';
+import type { AverzianAnalysisResult } from '../types/analyzer';
+import { Shield, AlertCircle, Clock, Users } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -13,211 +13,118 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<AverzianAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expandedSoak, setExpandedSoak] = useState<number | null>(null);
 
   useEffect(() => {
-    analyzeFight();
-  }, [reportId, fightId]);
-
-  const analyzeFight = async () => {
-    setLoading(true);
-    try {
-      const [soakEvents, roster, actorMap] = await Promise.all([
-        fetchSoakEvents(accessToken, reportId, fightId),
-        fetchRaidRoster(accessToken, reportId, fightId),
-        fetchActorMapping(accessToken, reportId, fightId)
-      ]);
-
-      const findIdByGameID = (gameID: number) => {
-        const entry = Object.entries(actorMap).find(([_, data]) => (data as any).gameID === gameID);
-        return entry ? (entry[1] as any).id : undefined;
-      };
-
-      const findIdByFuzzyName = (names: string[]) => {
-        const entry = Object.entries(actorMap).find(([actorName]) => 
-          names.some(n => actorName.toLowerCase().includes(n.toLowerCase()))
-        );
-        return entry ? (entry[1] as any).id : undefined;
-      };
-
-      // 1. Try Game ID first
-      let bossId = findIdByGameID(240435);
-      
-      // 2. Fallback to Name
-      if (!bossId) bossId = findIdByFuzzyName(["Imperator Averzian", "Averzian"]);
-      
-      // 3. Ultimate Fallback: Most damaged target
-      if (!bossId) {
-        const mostDamaged = Object.entries(actorMap)
-          .sort((a, b) => (b[1] as any).total - (a[1] as any).total)[0];
-        if (mostDamaged) bossId = (mostDamaged[1] as any).id;
-      }
-
-      // Process Soak Waves
-      const soakWaves: SoakWave[] = [];
-      const SOAK_THRESHOLD_MS = 2000;
-      
-      let currentWave: any[] = [];
-      let lastTime = 0;
-
-      soakEvents.forEach((event: any) => {
-        if (event.timestamp - lastTime > SOAK_THRESHOLD_MS && currentWave.length > 0) {
-          soakWaves.push(processWave(currentWave, roster));
-          currentWave = [];
-        }
-        currentWave.push(event);
-        lastTime = event.timestamp;
-      });
-      if (currentWave.length > 0) soakWaves.push(processWave(currentWave, roster));
-
-      setResult({ reportId, fightId, soakWaves });
+    const analyze = async () => {
+      setLoading(true);
       setError(null);
-    } catch (err: any) {
-      console.error("Analysis failed:", err);
-      setError(err?.message || "An unexpected error occurred during analysis.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const processWave = (events: any[], roster: any[]): SoakWave => {
-    const soakersSet = new Set(events.map((e: any) => e.targetID));
-    const soakers = roster.filter(p => soakersSet.has(p.id)).map(p => p.name);
-    const missed = roster.filter(p => !soakersSet.has(p.id)).map(p => p.name);
-    const totalDamage = events.reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-    
-    return {
-      timestamp: events[0].timestamp,
-      abilityId: events[0].ability?.id || 0,
-      soakers,
-      totalDamage,
-      averageDamage: Math.round(totalDamage / (soakers.length || 1)),
-      missedPlayers: missed
+      try {
+        const events = await fetchAverzianDamageEvents(accessToken, reportId, fightId);
+        setResult({ reportId, fightId, events });
+      } catch (err: any) {
+        console.error("Analysis failed:", err);
+        setError(err?.message || "Failed to fetch event data.");
+      } finally {
+        setLoading(false);
+      }
     };
-  };
 
+    analyze();
+  }, [accessToken, reportId, fightId]);
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-20">
       <div className="loading-spinner"></div>
-      <p className="mt-4 text-purple-400 animate-pulse">Analyzing encounter data...</p>
+      <p className="mt-4 text-purple-400 animate-pulse">Fetching Umbral Collapse events...</p>
     </div>
   );
 
   if (error) return (
     <div className="glass-panel p-10 text-center border-red-500/50">
       <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
-      <h3 className="text-xl font-bold text-red-400">Analysis Error</h3>
-      <p className="text-gray-400 mb-6">We encountered a problem while resolving the encounter details.</p>
-      <div className="bg-black/40 p-4 rounded-lg text-left border border-red-500/20 max-w-xl mx-auto overflow-auto">
-        <code className="text-xs text-red-300 font-mono italic">
-          {error}
-        </code>
-      </div>
-      <button 
-        onClick={() => analyzeFight()} 
-        className="mt-8 px-6 py-2 bg-red-500/20 text-red-300 border border-red-500/40 rounded-lg hover:bg-red-500/30 transition-all text-sm font-bold"
-      >
-        Retry Analysis
-      </button>
+      <h3 className="text-xl font-bold text-red-400">Fetch Error</h3>
+      <p className="text-gray-400">{error}</p>
     </div>
   );
 
-  if (!result) return (
+  if (!result || result.events.length === 0) return (
     <div className="glass-panel p-10 text-center">
       <AlertCircle size={48} className="mx-auto text-gray-500 mb-4" />
-      <h3 className="text-xl font-bold">No Data Available</h3>
-      <p className="text-gray-400">The analyzer didn't find any results for this fight.</p>
+      <h3 className="text-xl font-bold">No Events Found</h3>
+      <p className="text-gray-400">No damage events for spell 1249262 were found in this fight.</p>
     </div>
   );
+
+  const totalDamage = result.events.reduce((sum, e) => sum + e.amount, 0);
 
   return (
     <div className="averzian-analyzer space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Hero Header */}
       <div className="glass-panel p-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
             <div className="h-px w-8 bg-accent-color"></div>
-            <span className="text-accent-color uppercase tracking-widest text-xs font-bold">Combat Insight</span>
+            <span className="text-accent-color uppercase tracking-widest text-xs font-bold">Fresh Start</span>
           </div>
           <h2 className="text-4xl font-bold bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
-            Imperator Averzian
+            Umbral Collapse Log
           </h2>
           <p className="text-gray-400 mt-2 max-w-2xl">
-            Mechanics audit focusing on grid soaking efficiency and identification of missed soakers.
+            A raw list of all damage taken from Spell ID 1249262 (Umbral Collapse) for Imperator Averzian.
           </p>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto">
-        {/* Soak Analysis Card */}
-        <div className="glass-panel p-6 border-l-4 border-l-primary-color">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-500/10 rounded-lg">
-                <Shield className="text-primary-color" size={24} />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold">Umbral Collapse</h3>
-                <p className="text-xs text-gray-400">Soak distribution audit</p>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="glass-panel p-4 flex items-center gap-4 border-l-4 border-l-purple-500">
+          <div className="p-3 bg-purple-500/10 rounded-xl">
+            <Clock className="text-purple-400" size={24} />
           </div>
-          
-          <div className="space-y-4">
-            {result.soakWaves.length === 0 ? (
-              <div className="text-center py-10 text-gray-500 italic">No soak events detected in this window.</div>
-            ) : result.soakWaves.map((wave, index) => (
-              <div 
-                key={index} 
-                className={`group transition-all duration-300 rounded-xl border ${expandedSoak === index ? 'bg-white/5 border-purple-500/30' : 'bg-black/20 border-white/5 hover:border-white/10'}`}
-              >
-                <div 
-                  className="p-4 flex items-center justify-between cursor-pointer"
-                  onClick={() => setExpandedSoak(expandedSoak === index ? null : index)}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col items-center justify-center w-10 h-10 rounded-lg bg-black/40 border border-white/10">
-                      <span className="text-xs text-gray-500 font-bold">W</span>
-                      <span className="text-sm font-bold text-white">{index + 1}</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-gray-200">{wave.soakers.length} Players Soaked</div>
-                      <div className="text-xs text-gray-500">Avg. Damage: <span className="text-accent-color">{wave.averageDamage.toLocaleString()}</span></div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right hidden sm:block">
-                      <div className="text-xs text-gray-500 uppercase tracking-tighter">Impact Time</div>
-                      <div className="text-sm text-gray-300 font-mono">+{Math.round(wave.timestamp / 1000)}s</div>
-                    </div>
-                    {expandedSoak === index ? <ChevronUp className="text-gray-400" /> : <ChevronDown className="text-gray-400" />}
-                  </div>
-                </div>
+          <div>
+            <div className="text-xs text-gray-500 uppercase font-black">Total Events</div>
+            <div className="text-2xl font-bold">{result.events.length}</div>
+          </div>
+        </div>
+        <div className="glass-panel p-4 flex items-center gap-4 border-l-4 border-l-emerald-500">
+          <div className="p-3 bg-emerald-500/10 rounded-xl">
+            <Shield className="text-emerald-400" size={24} />
+          </div>
+          <div>
+            <div className="text-xs text-gray-500 uppercase font-black">Total Damage</div>
+            <div className="text-2xl font-bold">{(totalDamage / 1000000).toFixed(1)}M</div>
+          </div>
+        </div>
+      </div>
 
-                {expandedSoak === index && (
-                  <div className="px-4 pb-4 animate-in slide-in-from-top-2 duration-300">
-                    <div className="h-px bg-white/5 mb-4"></div>
-                    <div className="space-y-4">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-xs font-bold text-red-400 flex items-center gap-1.5 uppercase tracking-wider">
-                          <AlertCircle size={12} /> Missed Soak ({wave.missedPlayers.length})
-                        </span>
-                        <div className="flex flex-wrap gap-2">
-                          {wave.missedPlayers.map(p => (
-                            <span key={p} className="text-[10px] sm:text-xs px-2.5 py-1 bg-red-500/10 text-red-300 border border-red-500/20 rounded-full hover:bg-red-500/20 transition-colors">
-                              {p}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+      <div className="glass-panel overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-white/5">
+                <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-gray-400 border-b border-white/10">Timestamp</th>
+                <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-widest text-gray-400 border-b border-white/10">Player</th>
+                <th className="px-6 py-4 text-right text-xs font-black uppercase tracking-widest text-gray-400 border-b border-white/10">Damage Taken</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {result.events.map((event, index) => (
+                <tr key={index} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="px-6 py-4 text-sm font-mono text-gray-500">
+                    +{((event.timestamp - result.events[0].timestamp) / 1000).toFixed(1)}s
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                      <span className="font-bold text-gray-200">{event.targetName}</span>
                     </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <span className="text-accent-color font-bold">{event.amount.toLocaleString()}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

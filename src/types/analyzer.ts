@@ -1,14 +1,12 @@
-export interface SoakWave {
+export interface AverzianDamageEvent {
   timestamp: number;
-  abilityId: number;
-  soakers: string[];
-  totalDamage: number;
-  averageDamage: number;
-  missedPlayers: string[];
+  targetName: string;
+  amount: number;
+  mitigated?: number;
 }
 
 export interface AverzianAnalysisResult {
   reportId: string;
   fightId: number;
-  soakWaves: SoakWave[];
+  events: AverzianDamageEvent[];
 }
