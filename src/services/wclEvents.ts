@@ -48,21 +48,18 @@ export const fetchActorMapping = async (accessToken: string, reportId: string, f
 
 export const fetchRaidRoster = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
-  const data = await sdk.getReportPlayerDetails({
+  const data = await sdk.getReportFights({
     code: reportId,
-    fightIds: [fightId]
+    fightIds: [fightId],
+    includePlayers: true,
+    includeNpcs: false,
+    includeDungeonPulls: false
   });
   
-  const details = data.reportData?.report?.playerDetails?.data;
-  if (!details) return [];
-
-  // Flatten the different roles into a single list of players
-  const players: any[] = [];
-  if (details.tanks) players.push(...details.tanks);
-  if (details.healers) players.push(...details.healers);
-  if (details.dps) players.push(...details.dps);
+  const fight = data.reportData?.report?.fights?.[0];
+  const players = fight?.friendlyPlayers || [];
   
-  return players.map(p => ({
+  return players.map((p: any) => ({
     id: p.id,
     name: p.name,
     type: p.type,
