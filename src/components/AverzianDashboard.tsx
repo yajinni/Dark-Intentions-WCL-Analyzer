@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { fetchSoakEvents, fetchDamageDoneEvents, fetchRaidRoster, fetchActorMapping } from '../services/wclEvents';
-import type { SoakWave, TunnelingReport, AverzianAnalysisResult } from '../types/analyzer';
-import { Shield, Target, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { fetchSoakEvents, fetchRaidRoster, fetchActorMapping } from '../services/wclEvents';
+import type { SoakWave, AverzianAnalysisResult } from '../types/analyzer';
+import { Shield, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -21,9 +21,8 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
   const analyzeFight = async () => {
     setLoading(true);
     try {
-      const [soakEvents, damageEvents, roster, actorMap] = await Promise.all([
+      const [soakEvents, roster, actorMap] = await Promise.all([
         fetchSoakEvents(accessToken, reportId, fightId),
-        fetchDamageDoneEvents(accessToken, reportId, fightId),
         fetchRaidRoster(accessToken, reportId, fightId),
         fetchActorMapping(accessToken, reportId, fightId)
       ]);
@@ -53,16 +52,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
         if (mostDamaged) bossId = (mostDamaged[1] as any).id;
       }
 
-      const addKeywords = ["Voidshaper", "Voidmaw", "Shadowguard", "Annihilator", "Void"];
-      const addIds = new Set<number>();
-      Object.entries(actorMap).forEach(([name, data]) => {
-        const actorData = data as any;
-        if (addKeywords.some(k => name.toLowerCase().includes(k.toLowerCase())) && actorData.id !== bossId) {
-          addIds.add(actorData.id);
-        }
-      });
-
-      // 1. Process Soak Waves
+      // Process Soak Waves
       const soakWaves: SoakWave[] = [];
       const SOAK_THRESHOLD_MS = 2000;
       
@@ -79,35 +69,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
       });
       if (currentWave.length > 0) soakWaves.push(processWave(currentWave, roster));
 
-      // 2. Process Tunneling
-      // Filter for boss damage and add damage using IDs
-      const addDamageEvents = damageEvents.filter((e: any) => addIds.has(e.targetID));
-      const bossDamageEvents = damageEvents.filter((e: any) => e.targetID === bossId);
-      
-      const tunnelingReports: TunnelingReport[] = roster.map(player => {
-        const playerBossDamageDuringAdds = bossDamageEvents
-          .filter((e: any) => e.sourceID === player.id)
-          .filter((e: any) => isDuringAdds(e.timestamp, addDamageEvents))
-          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          
-        const playerAddDamage = addDamageEvents
-          .filter((e: any) => e.sourceID === player.id)
-          .reduce((sum: number, e: any) => sum + (e.amount || 0), 0);
-          
-        const score = playerBossDamageDuringAdds > 0 
-          ? (playerBossDamageDuringAdds / (playerBossDamageDuringAdds + playerAddDamage)) * 100 
-          : 0;
-
-        return {
-          playerName: player.name,
-          bossDamage: playerBossDamageDuringAdds,
-          addDamage: playerAddDamage,
-          tunnelingScore: Math.round(score)
-        };
-      }).filter(r => r.bossDamage > 0 || r.addDamage > 0)
-        .sort((a, b) => b.tunnelingScore - a.tunnelingScore);
-
-      setResult({ reportId, fightId, soakWaves, tunnelingPlayers: tunnelingReports });
+      setResult({ reportId, fightId, soakWaves });
     } catch (err) {
       console.error("Analysis failed:", err);
     } finally {
@@ -131,10 +93,6 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
     };
   };
 
-  const isDuringAdds = (timestamp: number, addEvents: any[]) => {
-    const ADD_WINDOW_MS = 5000; // If add damage occurred within 5s, consider adds active
-    return addEvents.some((e: any) => Math.abs(e.timestamp - timestamp) < ADD_WINDOW_MS);
-  };
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center p-20">
@@ -165,12 +123,12 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
             Imperator Averzian
           </h2>
           <p className="text-gray-400 mt-2 max-w-2xl">
-            Mechanics audit focusing on grid soaking efficiency and target priority execution during priority add phases.
+            Mechanics audit focusing on grid soaking efficiency and identification of missed soakers.
           </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="max-w-3xl mx-auto">
         {/* Soak Analysis Card */}
         <div className="glass-panel p-6 border-l-4 border-l-primary-color">
           <div className="flex items-center justify-between mb-8">
@@ -237,60 +195,6 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
                 )}
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* Tunneling Analysis Card */}
-        <div className="glass-panel p-6 border-l-4 border-l-accent-color">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-2 bg-yellow-500/10 rounded-lg">
-              <Target className="text-accent-color" size={24} />
-            </div>
-            <div>
-              <h3 className="text-xl font-bold">Add Priority & Focus</h3>
-              <p className="text-xs text-gray-400">Boss tunneling metrics during active adds</p>
-            </div>
-          </div>
-          
-          <div className="overflow-hidden">
-            <table className="w-100 border-separate border-spacing-y-3">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-widest text-gray-500">
-                  <th className="pb-2 font-black pl-2">Raid Member</th>
-                  <th className="pb-2 font-black">Execution</th>
-                  <th className="pb-2 text-right pr-2 font-black">Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.tunnelingPlayers.slice(0, 8).map((player, index) => (
-                  <tr key={index} className="group odd:bg-white/[0.02] hover:bg-white/[0.04] transition-all duration-200">
-                    <td className="py-3 pl-3">
-                      <div className="font-bold text-sm text-gray-200">{player.playerName}</div>
-                      <div className="text-[10px] text-gray-500">Boss: {(player.bossDamage / 1000000).toFixed(1)}M | Adds: {(player.addDamage / 1000000).toFixed(1)}M</div>
-                    </td>
-                    <td className="py-3 w-32 min-w-[120px]">
-                      <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden border border-white/5">
-                        <div 
-                          className={`h-full transition-all duration-1000 ease-out rounded-full ${player.tunnelingScore > 70 ? 'bg-gradient-to-r from-red-600 to-red-400 shadow-[0_0_8px_rgba(239,68,68,0.4)]' : player.tunnelingScore > 40 ? 'bg-gradient-to-r from-orange-500 to-yellow-400' : 'bg-gradient-to-r from-emerald-600 to-emerald-400'}`}
-                          style={{ width: `${player.tunnelingScore}%` }}
-                        ></div>
-                      </div>
-                    </td>
-                    <td className="py-3 text-right pr-3 font-mono font-bold">
-                      <span className={player.tunnelingScore > 75 ? 'text-red-400' : player.tunnelingScore > 40 ? 'text-yellow-400' : 'text-emerald-400'}>
-                        {player.tunnelingScore}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {result.tunnelingPlayers.length > 8 && (
-              <div className="mt-6 flex items-center justify-between px-2">
-                <span className="text-[10px] text-gray-600 italic">Showing top 8 contributors to focus variance.</span>
-                <span className="text-[10px] text-purple-400/60 font-bold uppercase tracking-widest cursor-pointer hover:text-purple-400">View Full Roster</span>
-              </div>
-            )}
           </div>
         </div>
       </div>
