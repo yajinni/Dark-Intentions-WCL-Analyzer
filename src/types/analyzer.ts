@@ -21,8 +21,17 @@ export interface SoakSet {
   totalDamage: number;
 }
 
+export interface TunnelingEntry {
+  playerName: string;
+  playerClass: string;
+  tunnelingDamage: number; // Boss damage while adds alive
+  totalBossDamage: number;
+  tunnelingPercentage: number;
+}
+
 export interface AverzianAnalysisResult {
   reportId: string;
   fightId: number;
   sets: SoakSet[];
+  tunnelingEntries?: TunnelingEntry[];
 }

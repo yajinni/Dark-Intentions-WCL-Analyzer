@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { fetchAverzianDamageEvents } from '../services/wclEvents';
+import { fetchTunnelingData } from '../services/tunneling';
 import type { AverzianAnalysisResult, Soak, SoakSet, AverzianDamageEvent } from '../types/analyzer';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Target, Waves } from 'lucide-react';
+import TunnelingAudit from './TunnelingAudit';
 
 interface Props {
   accessToken: string;
   reportId: string;
   fightId: number;
   fightStartTime: number;
+  fightEndTime: number;
 }
 
-const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fightStartTime }) => {
+const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fightStartTime, fightEndTime }) => {
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'soaks' | 'tunneling'>('soaks');
   const [result, setResult] = useState<AverzianAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,7 +24,10 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       setLoading(true);
       setError(null);
       try {
-        const events = await fetchAverzianDamageEvents(accessToken, reportId, fightId);
+        const [events, tunneling] = await Promise.all([
+          fetchAverzianDamageEvents(accessToken, reportId, fightId),
+          fetchTunnelingData(accessToken, reportId, fightId, fightStartTime, fightEndTime)
+        ]);
         
         const soaks: Soak[] = [];
         const SOAK_GAP_MS = 1000;
@@ -58,7 +65,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           if (currentSetSoaks.length > 0) sets.push(createSet(sets.length + 1, currentSetSoaks));
         }
 
-        setResult({ reportId, fightId, sets });
+        setResult({ reportId, fightId, sets, tunnelingEntries: tunneling });
       } catch (err: any) {
         console.error("Analysis failed:", err);
         setError(err?.message || "Failed to process hierarchy.");
@@ -68,7 +75,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
     };
 
     analyze();
-  }, [accessToken, reportId, fightId]);
+  }, [accessToken, reportId, fightId, fightStartTime, fightEndTime]);
 
   const createSoak = (events: AverzianDamageEvent[]): Soak => {
     const total = events.reduce((sum, e) => sum + e.amount, 0);
@@ -127,43 +134,68 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       {/* Header */}
       <div className="glass-panel p-8 relative overflow-hidden mb-6">
         <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -mr-32 -mt-32"></div>
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="h-px w-8 bg-accent-color"></div>
-            <span className="text-accent-color uppercase tracking-widest text-[10px] font-bold">Log Summary</span>
+        <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="h-px w-8 bg-accent-color"></div>
+              <span className="text-accent-color uppercase tracking-widest text-[10px] font-bold">Encounter Analyzer</span>
+            </div>
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
+              Imperator Averzian
+            </h2>
           </div>
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-purple-400 bg-clip-text text-transparent">
-            Umbral Collapse Soaks
-          </h2>
+
+          {/* Tab Switcher */}
+          <div className="flex bg-black/40 p-1 rounded-xl border border-white/5 backdrop-blur-md">
+            <button 
+              onClick={() => setActiveTab('soaks')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'soaks' 
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' 
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Waves size={14} />
+              SOAK SUMMARY
+            </button>
+            <button 
+              onClick={() => setActiveTab('tunneling')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'tunneling' 
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' 
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              <Target size={14} />
+              BOSS TUNNELING
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Soak List */}
-      <div className="soak-list">
-        {result.sets.flatMap(set => set.soaks).map((soak, sIdx) => {
-          return (
-            <div key={`soak-${sIdx}`} className="soak-row">
-              {/* Timestamp */}
-              <div className="soak-timestamp">
-                +{formatTime(soak.timestamp - fightStartTime)}
+      {activeTab === 'soaks' ? (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="flex items-center gap-2 mb-4 px-2">
+            <Waves size={16} className="text-purple-400" />
+            <span className="text-sm font-bold text-gray-100 uppercase tracking-tight">Umbral Collapse Soaks</span>
+          </div>
+          {/* Soak List */}
+          <div className="soak-list">
+            {result.sets.flatMap(set => set.soaks).map((soak, sIdx) => (
+              <div key={`soak-${sIdx}`} className="soak-row">
+                <div className="soak-timestamp">+{formatTime(soak.timestamp - fightStartTime)}</div>
+                <div className="soak-label">Soak {sIdx + 1}</div>
+                <div className="soak-avg-hit">
+                  <span className="soak-avg-hit-label">Avg Hit </span>
+                  <span className="soak-avg-hit-value">{soak.averageDamage.toLocaleString()}</span>
+                </div>
               </div>
-              
-              {/* Label */}
-              <div className="soak-label">
-                Soak {sIdx + 1}
-              </div>
-
-              {/* Avg Damage */}
-              <div className="soak-avg-hit">
-                <span className="soak-avg-hit-label">Avg Hit </span>
-                <span className="soak-avg-hit-value">
-                  {soak.averageDamage.toLocaleString()}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <TunnelingAudit entries={result.tunnelingEntries || []} />
+      )}
     </div>
   );
 };

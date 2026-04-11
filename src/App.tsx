@@ -233,6 +233,7 @@ function App() {
                         reportId={reportId!} 
                         fightId={selectedFight.id} 
                         fightStartTime={selectedFight.startTime}
+                        fightEndTime={selectedFight.endTime}
                       />
                     ) : (
                       <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
