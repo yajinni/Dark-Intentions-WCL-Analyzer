@@ -25,6 +25,27 @@ export const fetchDamageDoneEvents = async (accessToken: string, reportId: strin
   return data.reportData?.report?.events?.data || [];
 };
 
+export const fetchActorMapping = async (accessToken: string, reportId: string, fightId: number) => {
+  const sdk = buildSdk(accessToken);
+  // Fetch DamageDone table to get the mapping of names to IDs
+  const data = await sdk.getReportTable({
+    code: reportId,
+    fightIds: [fightId],
+    dataType: 'DamageDone' as any
+  });
+  
+  const entries = data.reportData?.report?.table?.entries || [];
+  const mapping: Record<string, number> = {};
+  
+  entries.forEach((entry: any) => {
+    if (entry.name && entry.id) {
+      mapping[entry.name] = entry.id;
+    }
+  });
+  
+  return mapping;
+};
+
 export const fetchRaidRoster = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
   const data = await sdk.getReportPlayerDetails({

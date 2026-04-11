@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { fetchSoakEvents, fetchDamageDoneEvents, fetchRaidRoster } from '../services/wclEvents';
+import { fetchSoakEvents, fetchDamageDoneEvents, fetchRaidRoster, fetchActorMapping } from '../services/wclEvents';
 import type { SoakWave, TunnelingReport, AverzianAnalysisResult } from '../types/analyzer';
 import { Shield, Target, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
@@ -21,15 +21,24 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
   const analyzeFight = async () => {
     setLoading(true);
     try {
-      const [soakEvents, damageEvents, roster] = await Promise.all([
+      const [soakEvents, damageEvents, roster, actorMap] = await Promise.all([
         fetchSoakEvents(accessToken, reportId, fightId),
         fetchDamageDoneEvents(accessToken, reportId, fightId),
-        fetchRaidRoster(accessToken, reportId, fightId)
+        fetchRaidRoster(accessToken, reportId, fightId),
+        fetchActorMapping(accessToken, reportId, fightId)
       ]);
+
+      const bossId = actorMap["Imperator Averzian"];
+      const addIds = new Set([
+        actorMap["Abyssal Voidshaper"],
+        actorMap["Voidmaw"],
+        actorMap["Shadowguard Stalwart"],
+        actorMap["Annihilator"]
+      ].filter(id => id !== undefined));
 
       // 1. Process Soak Waves
       const soakWaves: SoakWave[] = [];
-      const SOAK_THRESHOLD_MS = 2000; // Events within 2s belong to same soak
+      const SOAK_THRESHOLD_MS = 2000;
       
       let currentWave: any[] = [];
       let lastTime = 0;
@@ -45,9 +54,9 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
       if (currentWave.length > 0) soakWaves.push(processWave(currentWave, roster));
 
       // 2. Process Tunneling
-      // Define when adds were up (proxied by damage events to adds)
-      const addDamageEvents = damageEvents.filter((e: any) => e.targetName !== "Imperator Averzian");
-      const bossDamageEvents = damageEvents.filter((e: any) => e.targetName === "Imperator Averzian");
+      // Filter for boss damage and add damage using IDs
+      const addDamageEvents = damageEvents.filter((e: any) => addIds.has(e.targetID));
+      const bossDamageEvents = damageEvents.filter((e: any) => e.targetID === bossId);
       
       const tunnelingReports: TunnelingReport[] = roster.map(player => {
         const playerBossDamageDuringAdds = bossDamageEvents
