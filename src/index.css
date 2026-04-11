@@ -302,3 +302,69 @@ header {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* Averzian Dashboard Styles */
+.soak-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soak-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  padding: 10px 24px;
+  background: var(--surface-color);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(157, 78, 221, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.soak-row:hover {
+  background: rgba(157, 78, 221, 0.05);
+  border-color: var(--primary-color);
+  transform: translateX(4px);
+}
+
+.soak-timestamp {
+  width: 80px;
+  flex-shrink: 0;
+  font-family: monospace;
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.soak-label {
+  width: 120px;
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.9rem;
+}
+
+.soak-avg-hit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.soak-avg-hit-label {
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  font-weight: 900;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+}
+
+.soak-avg-hit-value {
+  font-family: monospace;
+  font-weight: 700;
+  color: #22c55e;
+  font-size: 0.95rem;
+}

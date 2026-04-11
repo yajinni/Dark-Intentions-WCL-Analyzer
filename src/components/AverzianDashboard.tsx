@@ -139,33 +139,24 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       </div>
 
       {/* Soak List */}
-      <div className="space-y-1">
+      <div className="soak-list">
         {result.sets.flatMap(set => set.soaks).map((soak, sIdx) => {
           return (
-            <div 
-              key={`soak-${sIdx}`} 
-              className="glass-panel py-2 px-6 flex items-center hover:bg-white/[0.04] transition-colors border border-white/5"
-            >
-              {/* Timestamp + Tab */}
-              <div className="w-16 shrink-0 font-mono text-gray-500 font-bold text-xs">
+            <div key={`soak-${sIdx}`} className="soak-row">
+              {/* Timestamp */}
+              <div className="soak-timestamp">
                 +{formatTime(soak.timestamp - fightStartTime)}
               </div>
               
-              {/* Spacing (Tab) */}
-              <div className="w-12 shrink-0"></div>
-
-              {/* Title + Tab */}
-              <div className="w-24 shrink-0">
-                <span className="text-sm font-bold text-gray-300 uppercase tracking-tight">Soak {sIdx + 1}</span>
+              {/* Label */}
+              <div className="soak-label">
+                Soak {sIdx + 1}
               </div>
 
-              {/* Spacing (Tab) */}
-              <div className="w-12 shrink-0"></div>
-
               {/* Avg Damage */}
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase text-gray-600 font-black tracking-widest">Avg Hit</span>
-                <span className="text-sm font-mono font-bold text-emerald-400">
+              <div className="soak-avg-hit">
+                <span className="soak-avg-hit-label">Avg Hit </span>
+                <span className="soak-avg-hit-value">
                   {soak.averageDamage.toLocaleString()}
                 </span>
               </div>
