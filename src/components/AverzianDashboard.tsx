@@ -12,6 +12,7 @@ interface Props {
 const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) => {
   const [loading, setLoading] = useState(true);
   const [result, setResult] = useState<AverzianAnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [expandedSoak, setExpandedSoak] = useState<number | null>(null);
 
   useEffect(() => {
@@ -70,8 +71,10 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
       if (currentWave.length > 0) soakWaves.push(processWave(currentWave, roster));
 
       setResult({ reportId, fightId, soakWaves });
-    } catch (err) {
+      setError(null);
+    } catch (err: any) {
       console.error("Analysis failed:", err);
+      setError(err?.message || "An unexpected error occurred during analysis.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +88,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
     
     return {
       timestamp: events[0].timestamp,
-      abilityId: events[0].ability.id,
+      abilityId: events[0].ability?.id || 0,
       soakers,
       totalDamage,
       averageDamage: Math.round(totalDamage / (soakers.length || 1)),
@@ -101,11 +104,30 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
     </div>
   );
 
+  if (error) return (
+    <div className="glass-panel p-10 text-center border-red-500/50">
+      <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
+      <h3 className="text-xl font-bold text-red-400">Analysis Error</h3>
+      <p className="text-gray-400 mb-6">We encountered a problem while resolving the encounter details.</p>
+      <div className="bg-black/40 p-4 rounded-lg text-left border border-red-500/20 max-w-xl mx-auto overflow-auto">
+        <code className="text-xs text-red-300 font-mono italic">
+          {error}
+        </code>
+      </div>
+      <button 
+        onClick={() => analyzeFight()} 
+        className="mt-8 px-6 py-2 bg-red-500/20 text-red-300 border border-red-500/40 rounded-lg hover:bg-red-500/30 transition-all text-sm font-bold"
+      >
+        Retry Analysis
+      </button>
+    </div>
+  );
+
   if (!result) return (
     <div className="glass-panel p-10 text-center">
-      <AlertCircle size={48} className="mx-auto text-red-500 mb-4" />
-      <h3 className="text-xl font-bold">Analysis Unavailable</h3>
-      <p className="text-gray-400">We couldn't resolve the encounter details. Please ensure the fight is correctly recorded.</p>
+      <AlertCircle size={48} className="mx-auto text-gray-500 mb-4" />
+      <h3 className="text-xl font-bold">No Data Available</h3>
+      <p className="text-gray-400">The analyzer didn't find any results for this fight.</p>
     </div>
   );
 
