@@ -27,16 +27,29 @@ export const fetchTunnelingData = async (
 
   const bossEvents = bossDamageData.reportData?.report?.events?.data || [];
 
-  // 2. Fetch all Deaths and Summons to find add lifespans
-  // We use AllEvents but filtered for priority adds to find their lifecycle
-  const addLifecycleData = await sdk.getReportEvents({
-    code: reportId,
-    fightIds: [fightId],
-    filterExpression: `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}")`,
-    dataType: 'AllEvents' as any
-  });
+  // 2. Fetch all Deaths and DamageTaken to find add lifespans
+  // We use valid EventDataType values (DamageTaken and Deaths)
+  const addFilter = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}")`;
+  
+  const [damageTakenData, deathsData] = await Promise.all([
+    sdk.getReportEvents({
+      code: reportId,
+      fightIds: [fightId],
+      filterExpression: addFilter,
+      dataType: 'DamageTaken' as any
+    }),
+    sdk.getReportEvents({
+      code: reportId,
+      fightIds: [fightId],
+      filterExpression: addFilter,
+      dataType: 'Deaths' as any
+    })
+  ]);
 
-  const lifecycleEvents = addLifecycleData.reportData?.report?.events?.data || [];
+  const lifecycleEvents = [
+    ...(damageTakenData.reportData?.report?.events?.data || []),
+    ...(deathsData.reportData?.report?.events?.data || [])
+  ].sort((a, b) => a.timestamp - b.timestamp);
 
   // 3. Process Add Lifespans
   // actorID -> { spawn: number, death: number }
