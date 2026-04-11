@@ -218,7 +218,7 @@ function App() {
                           </div>
                         </div>
                         <span className={`status-badge ${fight.kill ? 'status-kill' : 'status-wipe'}`}>
-                          {fight.kill ? 'Kill' : `Wipe (${(fight.bossPercentage / 100).toFixed(1)}%)`}
+                          {fight.kill ? 'Kill' : `Wipe (${(fight.bossPercentage).toFixed(1)}%)`}
                         </span>
                       </div>
                     </div>
