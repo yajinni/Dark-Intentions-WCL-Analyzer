@@ -35,11 +35,14 @@ export const fetchActorMapping = async (accessToken: string, reportId: string, f
   const table = data.reportData?.report?.table;
   // Handle both possible structures: table.entries or table.data.entries
   const entries = table?.entries || table?.data?.entries || [];
-  const mapping: Record<string, number> = {};
+  const mapping: Record<string, { id: number; total: number }> = {};
   
   entries.forEach((entry: any) => {
     if (entry.name && entry.id) {
-      mapping[entry.name] = entry.id;
+      mapping[entry.name] = { 
+        id: entry.id, 
+        total: entry.total || 0 
+      };
     }
   });
   

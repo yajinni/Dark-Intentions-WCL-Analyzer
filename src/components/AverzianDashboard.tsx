@@ -32,7 +32,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
         const entry = Object.entries(actorMap).find(([actorName]) => 
           names.some(n => actorName.toLowerCase().includes(n.toLowerCase()))
         );
-        return entry ? (entry[1] as number) : undefined;
+        return entry ? (entry[1] as any).id : undefined;
       };
 
       let bossId = findIdByFuzzyName(["Imperator Averzian", "Averzian"]);
@@ -41,14 +41,15 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
       if (!bossId) {
         const mostDamaged = Object.entries(actorMap)
           .sort((a, b) => (b[1] as any).total - (a[1] as any).total)[0];
-        if (mostDamaged) bossId = mostDamaged[1] as number;
+        if (mostDamaged) bossId = (mostDamaged[1] as any).id;
       }
 
       const addKeywords = ["Voidshaper", "Voidmaw", "Shadowguard", "Annihilator", "Void"];
       const addIds = new Set<number>();
-      Object.entries(actorMap).forEach(([name, id]) => {
-        if (addKeywords.some(k => name.toLowerCase().includes(k.toLowerCase())) && id !== bossId) {
-          addIds.add(id as number);
+      Object.entries(actorMap).forEach(([name, data]) => {
+        const actorData = data as any;
+        if (addKeywords.some(k => name.toLowerCase().includes(k.toLowerCase())) && actorData.id !== bossId) {
+          addIds.add(actorData.id);
         }
       });
 
