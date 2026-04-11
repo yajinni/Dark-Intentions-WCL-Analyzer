@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
+import AverzianDashboard from './components/AverzianDashboard';
 import { 
   Shield, BarChart3, Zap, Sword, LogOut, ChevronRight, 
   Search, Loader2, Target, Clock, AlertTriangle 
@@ -11,8 +12,9 @@ function App() {
   const [logUrl, setLogUrl] = useState<string>('');
   const [fights, setFights] = useState<any[]>([]);
   const [isLoadingFights, setIsLoadingFights] = useState<boolean>(false);
-  const [selectedFightId, setSelectedFightId] = useState<number | null>(null);
+  const [selectedFight, setSelectedFight] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reportId, setReportId] = useState<string | null>(null);
 
   useEffect(() => {
     // Check for token in URL (from callback redirect)
@@ -57,7 +59,7 @@ function App() {
     setIsAuthorized(false);
     setFights([]);
     setLogUrl('');
-    setSelectedFightId(null);
+    setSelectedFight(null);
   };
 
   const parseReportId = (url: string) => {
@@ -78,6 +80,7 @@ function App() {
     setError(null);
     setIsLoadingFights(true);
     setFights([]);
+    setReportId(reportId);
     
     try {
       const sdk = buildSdk(accessToken);
@@ -194,8 +197,8 @@ function App() {
                   {fights.map((fight: any) => (
                     <div 
                       key={fight.id} 
-                      className={`glass-panel fight-card ${selectedFightId === fight.id ? 'selected' : ''}`}
-                      onClick={() => setSelectedFightId(fight.id)}
+                      className={`glass-panel fight-card ${selectedFight?.id === fight.id ? 'selected' : ''}`}
+                      onClick={() => setSelectedFight(fight)}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div style={{ textAlign: 'left' }}>
@@ -217,11 +220,23 @@ function App() {
                   ))}
                 </div>
                 
-                {selectedFightId && (
+                {selectedFight && (
                   <div style={{ marginTop: '40px', animation: 'fadeIn 0.4s ease-out' }}>
-                    <button className="btn-primary" style={{ margin: '0 auto', padding: '16px 48px', fontSize: '1.1rem' }}>
-                      <Zap size={20} /> Analyze Selection
-                    </button>
+                    {selectedFight.name === "Imperator Averzian" ? (
+                      <AverzianDashboard 
+                        accessToken={accessToken!} 
+                        reportId={reportId!} 
+                        fightId={selectedFight.id} 
+                      />
+                    ) : (
+                      <div className="glass-panel" style={{ padding: '40px', textAlign: 'center' }}>
+                         <h3 style={{ marginBottom: '20px' }}>Analysis for {selectedFight.name}</h3>
+                         <p>Custom metrics for this encounter are currently under development.</p>
+                         <button className="btn-primary" style={{ margin: '20px auto' }}>
+                           <Zap size={20} /> Request Analyzer
+                         </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
