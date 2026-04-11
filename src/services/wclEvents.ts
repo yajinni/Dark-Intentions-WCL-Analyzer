@@ -26,22 +26,42 @@ export const fetchDamageDoneEvents = async (accessToken: string, reportId: strin
 
 export const fetchActorMapping = async (accessToken: string, reportId: string, fightId: number) => {
   const sdk = buildSdk(accessToken);
-  const data = await sdk.getReportTable({
-    code: reportId,
-    fightIds: [fightId],
-    dataType: 'DamageDone' as any
-  });
   
-  const table = data.reportData?.report?.table;
-  // Handle both possible structures: table.entries or table.data.entries
+  // Fetch both table (for names/totals) and fights (for gameIDs)
+  const [tableData, fightData] = await Promise.all([
+    sdk.getReportTable({
+      code: reportId,
+      fightIds: [fightId],
+      dataType: 'DamageDone' as any
+    }),
+    sdk.getReportFights({
+      code: reportId,
+      fightIds: [fightId],
+      includeNpcs: true,
+      includePlayers: false,
+      includeDungeonPulls: false
+    })
+  ]);
+  
+  const table = tableData.reportData?.report?.table;
   const entries = table?.entries || table?.data?.entries || [];
-  const mapping: Record<string, { id: number; total: number }> = {};
+  const fight = fightData.reportData?.report?.fights?.[0];
+  const enemyNPCs = fight?.enemyNPCs || [];
   
+  const mapping: Record<string, { id: number; total: number; gameID?: number }> = {};
+  
+  // Create a map of ID -> GameID for enrichment
+  const idToGameID: Record<number, number> = {};
+  enemyNPCs.forEach((npc: any) => {
+    if (npc.id && npc.gameID) idToGameID[npc.id] = npc.gameID;
+  });
+
   entries.forEach((entry: any) => {
     if (entry.name && entry.id) {
       mapping[entry.name] = { 
         id: entry.id, 
-        total: entry.total || 0 
+        total: entry.total || 0,
+        gameID: idToGameID[entry.id]
       };
     }
   });

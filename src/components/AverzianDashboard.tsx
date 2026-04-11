@@ -28,6 +28,11 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
         fetchActorMapping(accessToken, reportId, fightId)
       ]);
 
+      const findIdByGameID = (gameID: number) => {
+        const entry = Object.entries(actorMap).find(([_, data]) => (data as any).gameID === gameID);
+        return entry ? (entry[1] as any).id : undefined;
+      };
+
       const findIdByFuzzyName = (names: string[]) => {
         const entry = Object.entries(actorMap).find(([actorName]) => 
           names.some(n => actorName.toLowerCase().includes(n.toLowerCase()))
@@ -35,9 +40,13 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId }) 
         return entry ? (entry[1] as any).id : undefined;
       };
 
-      let bossId = findIdByFuzzyName(["Imperator Averzian", "Averzian"]);
+      // 1. Try Game ID first
+      let bossId = findIdByGameID(240435);
       
-      // Fallback: If no boss is found by name, pick the NPC with most damage taken
+      // 2. Fallback to Name
+      if (!bossId) bossId = findIdByFuzzyName(["Imperator Averzian", "Averzian"]);
+      
+      // 3. Ultimate Fallback: Most damaged target
       if (!bossId) {
         const mostDamaged = Object.entries(actorMap)
           .sort((a, b) => (b[1] as any).total - (a[1] as any).total)[0];
