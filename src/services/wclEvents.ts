@@ -6,7 +6,7 @@ export const fetchSoakEvents = async (accessToken: string, reportId: string, fig
   const data = await sdk.getReportEvents({
     code: reportId,
     fightIds: [fightId],
-    filterExpression: 'ability.id in (472506, 472508)',
+    filterExpression: 'ability.id in (472506, 472508, 1249262)',
     dataType: 'DamageTaken' as any // SDK might use enum, 'DamageTaken' is standard
   });
   return data.reportData?.report?.events?.data || [];
