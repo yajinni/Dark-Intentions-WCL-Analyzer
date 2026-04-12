@@ -2,8 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchAverzianDamageEvents } from '../services/wclEvents';
 import { fetchTunnelingData } from '../services/tunneling';
 import type { AverzianAnalysisResult, Soak, SoakSet, AverzianDamageEvent } from '../types/analyzer';
-import { AlertCircle, Target, Waves } from 'lucide-react';
-import TunnelingAudit from './TunnelingAudit';
+import { AlertCircle, Target, Waves, Clock, Info } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -24,7 +23,7 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
       setLoading(true);
       setError(null);
       try {
-        const [events, tunneling] = await Promise.all([
+        const [events, tunnelingData] = await Promise.all([
           fetchAverzianDamageEvents(accessToken, reportId, fightId),
           fetchTunnelingData(accessToken, reportId, fightId, fightStartTime, fightEndTime)
         ]);
@@ -65,7 +64,13 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           if (currentSetSoaks.length > 0) sets.push(createSet(sets.length + 1, currentSetSoaks));
         }
 
-        setResult({ reportId, fightId, sets, tunnelingEntries: tunneling });
+        setResult({ 
+          reportId, 
+          fightId, 
+          sets, 
+          tunnelingEntries: tunnelingData.entries,
+          addsAliveWindows: tunnelingData.windows
+        });
       } catch (err: any) {
         console.error("Analysis failed:", err);
         setError(err?.message || "Failed to process hierarchy.");
@@ -194,7 +199,103 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           </div>
         </div>
       ) : (
-        <TunnelingAudit entries={result.tunnelingEntries || []} />
+        <div className="tunneling-audit animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-6">
+          {/* Summary Card */}
+          {(() => {
+            const totalWasted = result.tunnelingEntries?.reduce((sum, e) => sum + e.tunnelingDamage, 0) || 0;
+            const isCritical = totalWasted > 10000000;
+            return (
+              <div className={`glass-panel p-6 border-l-4 ${isCritical ? 'border-l-red-500' : 'border-l-purple-500'}`}>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">Total Wasted Damage</div>
+                    <div className="text-3xl font-black text-white flex items-baseline gap-2">
+                      {Math.round(totalWasted).toLocaleString()}
+                      {isCritical && <span className="text-red-500 text-xs animate-pulse">! CRITICAL OVER-TUNNELING</span>}
+                    </div>
+                  </div>
+                  <Info size={20} className="text-gray-600" />
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Add Presence Windows Card */}
+          {result.addsAliveWindows && result.addsAliveWindows.length > 0 && (
+            <div className="glass-panel p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Clock size={16} className="text-purple-400" />
+                <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Add Presence Windows</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {result.addsAliveWindows.map((window, idx) => {
+                  const duration = (window.end - window.start) / 1000;
+                  return (
+                    <div key={idx} className="bg-white/5 border border-white/5 p-3 rounded-lg flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Window {idx + 1}</span>
+                        <span className="text-xs font-mono text-purple-300">
+                          {formatTime(window.start - fightStartTime)} - {formatTime(window.end - fightStartTime)}
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-white bg-purple-500/20 px-2 py-1 rounded">
+                        {duration.toFixed(1)}s
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Player Rankings */}
+          <div className="glass-panel overflow-hidden">
+            <div className="p-4 border-b border-white/5 bg-white/5 flex items-center gap-3">
+              <Target size={16} className="text-purple-400" />
+              <h3 className="text-sm font-bold text-gray-300 uppercase tracking-widest">Tunneling Rankings</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="text-[10px] font-bold text-gray-500 uppercase tracking-widest border-b border-white/5">
+                    <th className="px-6 py-4">Player</th>
+                    <th className="px-6 py-4">Boss Output While Adds Up</th>
+                    <th className="px-6 py-4 text-right">Wasted %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {result.tunnelingEntries?.map((entry, idx) => (
+                    <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
+                      <td className="px-6 py-4">
+                        <div className={`font-bold class-${entry.playerClass.toLowerCase()}`}>
+                          {entry.playerName}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1 h-2 bg-black/40 rounded-full overflow-hidden max-w-[150px]">
+                            <div 
+                              className="h-full bg-purple-500 rounded-full transition-all duration-1000"
+                              style={{ width: `${entry.tunnelingPercentage}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-sm font-mono text-white">
+                            {Math.round(entry.tunnelingDamage).toLocaleString()}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`text-sm font-bold ${entry.tunnelingPercentage > 50 ? 'text-red-400' : 'text-gray-300'}`}>
+                          {entry.tunnelingPercentage.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

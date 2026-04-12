@@ -19,7 +19,7 @@ export const fetchTunnelingData = async (
   fightId: number,
   fightStartTime: number,
   fightEndTime: number
-): Promise<TunnelingEntry[]> => {
+): Promise<{ entries: TunnelingEntry[]; windows: { start: number; end: number }[] }> => {
   const sdk = buildSdk(accessToken);
 
   // Helper for pagination
@@ -165,7 +165,7 @@ export const fetchTunnelingData = async (
     }
   });
 
-  return Object.values(attribution)
+  const tunnelingEntries = Object.values(attribution)
     .map(p => ({
       playerName: p.name,
       playerClass: p.class,
@@ -175,4 +175,9 @@ export const fetchTunnelingData = async (
     }))
     .filter(p => p.totalBossDamage > 0)
     .sort((a, b) => b.tunnelingDamage - a.tunnelingDamage);
+
+  return {
+    entries: tunnelingEntries,
+    windows: mergedIntervals.map(i => ({ start: i[0], end: i[1] }))
+  };
 };

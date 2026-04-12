@@ -34,4 +34,5 @@ export interface AverzianAnalysisResult {
   fightId: number;
   sets: SoakSet[];
   tunnelingEntries?: TunnelingEntry[];
+  addsAliveWindows?: { start: number; end: number }[];
 }
