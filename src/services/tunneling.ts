@@ -39,32 +39,50 @@ export const fetchTunnelingData = async (
     return allData;
   };
 
-  // 1. Get Priority Add IDs from ReportFights
-  const fightsData = await sdk.getReportFights({
-    code: reportId,
-    fightIds: [fightId],
-    includeNpcs: true,
-    includePlayers: false,
-    includeDungeonPulls: false
-  });
+  // 1. Dual-Source ID Discovery
+  // We check both the fight NPCs and the Damage Done table for robustness
+  const [fightsData, tableData] = await Promise.all([
+    sdk.getReportFights({
+      code: reportId,
+      fightIds: [fightId],
+      includeNpcs: true,
+      includePlayers: false,
+      includeDungeonPulls: false
+    }),
+    sdk.getReportTable({
+      code: reportId,
+      fightIds: [fightId],
+      dataType: 'DamageDone' as any
+    })
+  ]);
   
   const fight: any = fightsData.reportData?.report?.fights?.[0];
   const npcs = fight?.npcs || [];
-  const priorityAddIds = npcs
-    .filter((n: any) => PRIORITY_NPC_IDS.includes(n.gameID))
-    .map((n: any) => n.id);
-
-  // Map Actor ID to NPC Name for grouping
+  const table = tableData.reportData?.report?.table;
+  const tableEntries = table?.entries || table?.data?.entries || [];
+  
+  // Combine all actor info into a resilient lookup
   const actorToName: Record<number, string> = {};
+  const priorityAddIds: number[] = [];
+
+  // Discovery from Fights NPCs
   npcs.forEach((n: any) => {
     if (PRIORITY_NPC_IDS.includes(n.gameID)) {
       actorToName[n.id] = n.name;
+      priorityAddIds.push(n.id);
     }
   });
 
-  if (priorityAddIds.length === 0) {
-    console.log("No priority adds found in fight data, but fetching anyway in case events carry them.");
-  }
+  // Discovery from Table Entries (fallback for untracked actors)
+  tableEntries.forEach((e: any) => {
+    // If the name matches our priority list but wasn't in NPCs header
+    if (PRIORITY_ADDS.some(name => e.name?.includes(name))) {
+      if (!priorityAddIds.includes(e.id)) {
+        priorityAddIds.push(e.id);
+        actorToName[e.id] = e.name;
+      }
+    }
+  });
 
   // 2. Fetch all Boss Damage events (Paginated)
   const bossEvents = await fetchAllEvents({
@@ -77,8 +95,9 @@ export const fetchTunnelingData = async (
   });
 
   // 3. Fetch all Add Lifecycle events (Paginated)
+  // Use a hybrid filter: IDs we found + substring names for safety
   const idPart = priorityAddIds.length > 0 ? `target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')})` : '1=0';
-  const namePart = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}")`;
+  const namePart = PRIORITY_ADDS.map(name => `target.name CONTAINS "${name}" OR source.name CONTAINS "${name}"`).join(' OR ');
   const addFilter = `(${idPart}) OR (${namePart})`;
   
   const lifecycleTypes = ['DamageTaken', 'Deaths', 'Summons', 'Casts'];
@@ -98,34 +117,38 @@ export const fetchTunnelingData = async (
   const addLifespans: Record<number, { spawn: number; death: number; name: string }> = {};
 
   lifecycleEvents.forEach((ev: any) => {
-    // Check multiple properties for ID extraction (GraphQL often nests these)
+    // Collect all possible actor IDs from the event (target/source, top-level or nested)
     const tID = ev.targetID || ev.target?.id;
     const sID = ev.sourceID || ev.source?.id;
-    
-    // We also identify by name if the ID isn't in our fight-header list
     const tName = ev.target?.name || "";
     const sName = ev.source?.name || "";
 
-    const relevantIds: { id: number; name: string }[] = [];
+    const matches: { id: number; name: string }[] = [];
     
-    if (tID && priorityAddIds.includes(tID)) relevantIds.push({ id: tID, name: actorToName[tID] || tName });
-    else if (PRIORITY_ADDS.includes(tName)) relevantIds.push({ id: tID || -Math.random(), name: tName }); // Use name if ID mapping missing
+    // Match by ID
+    if (tID && priorityAddIds.includes(tID)) matches.push({ id: tID, name: actorToName[tID] || tName });
+    if (sID && priorityAddIds.includes(sID)) matches.push({ id: sID, name: actorToName[sID] || sName });
 
-    if (sID && priorityAddIds.includes(sID)) relevantIds.push({ id: sID, name: actorToName[sID] || sName });
-    else if (PRIORITY_ADDS.includes(sName)) relevantIds.push({ id: sID || -Math.random(), name: sName });
+    // Match by Name (Substring)
+    PRIORITY_ADDS.forEach(pName => {
+      if (tName.includes(pName) && !matches.some(m => m.id === tID)) matches.push({ id: tID || -Math.random(), name: pName });
+      if (sName.includes(pName) && !matches.some(m => m.id === sID)) matches.push({ id: sID || -Math.random(), name: pName });
+    });
 
-    relevantIds.forEach(actor => {
-      const actorID = actor.id;
-      const npcName = actor.name || "Unknown Add";
+    matches.forEach(match => {
+      const actorID = match.id;
+      const categoryName = match.name;
       
       if (!addLifespans[actorID]) {
-        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime, name: npcName };
+        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime, name: categoryName };
       }
 
+      // Update death if we see it
       if (ev.type === 'death' && (ev.targetID === actorID || ev.target?.id === actorID)) {
         addLifespans[actorID].death = ev.timestamp;
       }
       
+      // Update spawn if we see something earlier
       if (ev.timestamp < addLifespans[actorID].spawn) {
         addLifespans[actorID].spawn = ev.timestamp;
       }
@@ -134,15 +157,12 @@ export const fetchTunnelingData = async (
 
   // 5. Determine "Adds Alive" windows per NPC Type
   const groupedWindows: Record<string, { start: number; end: number }[]> = {};
-  
-  // Also collect ALL intervals for the raid-wide "Any Add Alive" check
   const allIntervals: [number, number][] = [];
 
-  const npcTypes = Array.from(new Set(Object.values(addLifespans).map(l => l.name)));
-  
-  npcTypes.forEach(name => {
+  // Categorize by normalized NPC name
+  PRIORITY_ADDS.forEach(pName => {
     const intervals = Object.values(addLifespans)
-      .filter(l => l.name === name)
+      .filter(l => l.name.includes(pName))
       .map(l => [l.spawn, l.death] as [number, number]);
     
     if (intervals.length === 0) return;
@@ -161,13 +181,13 @@ export const fetchTunnelingData = async (
       }
     }
     merged.push({ start: current[0], end: current[1] });
-    groupedWindows[name] = merged;
+    groupedWindows[pName] = merged;
     
-    // Add to allIntervals for the tunneling calculation
+    // Add to allIntervals for raid-wide tunneling check
     intervals.forEach(i => allIntervals.push(i));
   });
 
-  // Merge allIntervals for the isAddAliveAt check
+  // Merge allIntervals for the unified isAddAliveAt check
   const raidWideIntervals: [number, number][] = [];
   if (allIntervals.length > 0) {
     allIntervals.sort((a, b) => a[0] - b[0]);
@@ -190,27 +210,18 @@ export const fetchTunnelingData = async (
 
   // 6. Attribution
   const attribution: Record<number, { name: string; class: string; tunneling: number; total: number }> = {};
-
-  // Get actor info for class colors
-  const tableData = await sdk.getReportTable({
-    code: reportId,
-    fightIds: [fightId],
-    dataType: 'DamageDone' as any
-  });
-  const table = tableData.reportData?.report?.table;
-  const tableEntries = table?.entries || table?.data?.entries || [];
   const actorMap: Record<number, any> = {};
   tableEntries.forEach((e: any) => {
     if (e.id) actorMap[e.id] = e;
   });
 
   bossEvents.forEach((ev: any) => {
-    const sourceID = ev.sourceID;
+    const sourceID = ev.sourceID || ev.source?.id;
     if (!sourceID) return;
 
     if (!attribution[sourceID]) {
       attribution[sourceID] = {
-        name: actorMap[sourceID]?.name || `Unknown (${sourceID})`,
+        name: actorMap[sourceID]?.name || ev.source?.name || `Unknown (${sourceID})`,
         class: actorMap[sourceID]?.type || 'Unknown',
         tunneling: 0,
         total: 0
