@@ -221,29 +221,42 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           })()}
 
           {/* Add Presence Windows Card */}
-          {result.addsAliveWindows && result.addsAliveWindows.length > 0 && (
+          {result.addsAliveWindows && Object.keys(result.addsAliveWindows).length > 0 && (
             <div className="glass-panel p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <Clock size={16} className="text-purple-400" />
-                <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Add Presence Windows</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Clock size={16} className="text-purple-400" />
+                  <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Add Presence Windows</h3>
+                </div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">Grouped by NPC Type</div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {result.addsAliveWindows.map((window, idx) => {
-                  const duration = (window.end - window.start) / 1000;
-                  return (
-                    <div key={idx} className="bg-white/5 border border-white/5 p-3 rounded-lg flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Window {idx + 1}</span>
-                        <span className="text-xs font-mono text-purple-300">
-                          {formatTime(window.start - fightStartTime)} - {formatTime(window.end - fightStartTime)}
-                        </span>
-                      </div>
-                      <span className="text-xs font-bold text-white bg-purple-500/20 px-2 py-1 rounded">
-                        {duration.toFixed(1)}s
-                      </span>
+              <div className="space-y-6">
+                {Object.entries(result.addsAliveWindows).map(([npcName, windows]) => (
+                  <div key={npcName} className="space-y-2">
+                    <div className="flex items-center gap-2 px-1">
+                      <div className="w-1 h-1 bg-purple-500 rounded-full"></div>
+                      <span className="text-[11px] font-black text-purple-400 uppercase tracking-wider">{npcName}</span>
                     </div>
-                  );
-                })}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {windows.map((window, idx) => {
+                        const duration = (window.end - window.start) / 1000;
+                        return (
+                          <div key={idx} className="bg-white/5 border border-white/10 p-3 rounded-lg flex items-center justify-between">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Spawn {idx + 1}</span>
+                              <span className="text-xs font-mono text-purple-200">
+                                {formatTime(window.start - fightStartTime)} - {formatTime(window.end - fightStartTime)}
+                              </span>
+                            </div>
+                            <span className="text-xs font-bold text-white bg-purple-600/30 px-2 py-1 rounded">
+                              {duration.toFixed(1)}s
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

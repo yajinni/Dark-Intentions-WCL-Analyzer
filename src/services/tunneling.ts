@@ -19,7 +19,7 @@ export const fetchTunnelingData = async (
   fightId: number,
   fightStartTime: number,
   fightEndTime: number
-): Promise<{ entries: TunnelingEntry[]; windows: { start: number; end: number }[] }> => {
+): Promise<{ entries: TunnelingEntry[]; windows: Record<string, { start: number; end: number }[]> }> => {
   const sdk = buildSdk(accessToken);
 
   // Helper for pagination
@@ -54,6 +54,14 @@ export const fetchTunnelingData = async (
     .filter((n: any) => PRIORITY_NPC_IDS.includes(n.gameID))
     .map((n: any) => n.id);
 
+  // Map Actor ID to NPC Name for grouping
+  const actorToName: Record<number, string> = {};
+  npcs.forEach((n: any) => {
+    if (PRIORITY_NPC_IDS.includes(n.gameID)) {
+      actorToName[n.id] = n.name;
+    }
+  });
+
   if (priorityAddIds.length === 0) {
     console.log("No priority adds found in fight data, but fetching anyway in case events carry them.");
   }
@@ -69,8 +77,7 @@ export const fetchTunnelingData = async (
   });
 
   // 3. Fetch all Add Lifecycle events (Paginated)
-  // We use multiple types to be absolutely sure we catch their lifespan
-  const addFilter = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}") OR target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')})`;
+  const addFilter = `target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')}) OR target.name IN ("${PRIORITY_ADDS.join('","')}")`;
   
   const lifecycleTypes = ['DamageTaken', 'Deaths', 'Summons', 'Casts'];
   const lifecyclePromises = lifecycleTypes.map(type => fetchAllEvents({
@@ -86,15 +93,15 @@ export const fetchTunnelingData = async (
   const lifecycleEvents = allLifecycleResults.flat().sort((a, b) => a.timestamp - b.timestamp);
 
   // 4. Process Add Lifespans
-  const addLifespans: Record<number, { spawn: number; death: number }> = {};
+  const addLifespans: Record<number, { spawn: number; death: number; name: string }> = {};
 
   lifecycleEvents.forEach((ev: any) => {
-    // We look for any actor involved that is a priority add
-    const relevantIds = [ev.targetID, ev.sourceID, ev.target?.id, ev.source?.id].filter(id => id && (priorityAddIds.includes(id) || priorityAddIds.length === 0));
+    const relevantIds = [ev.targetID, ev.sourceID].filter(id => id && priorityAddIds.includes(id));
     
     relevantIds.forEach(actorID => {
+      const npcName = actorToName[actorID] || ev.target?.name || ev.source?.name || "Unknown Add";
       if (!addLifespans[actorID]) {
-        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime };
+        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime, name: npcName };
       }
 
       if (ev.type === 'death' && ev.targetID === actorID) {
@@ -107,26 +114,60 @@ export const fetchTunnelingData = async (
     });
   });
 
-  // 5. Determine "Adds Alive" windows
-  const rawIntervals = Object.values(addLifespans).map(l => [l.spawn, l.death]);
-  const mergedIntervals: [number, number][] = [];
-  if (rawIntervals.length > 0) {
-    rawIntervals.sort((a, b) => a[0] - b[0]);
-    let current = rawIntervals[0];
-    for (let i = 1; i < rawIntervals.length; i++) {
-      const next = rawIntervals[i];
+  // 5. Determine "Adds Alive" windows per NPC Type
+  const groupedWindows: Record<string, { start: number; end: number }[]> = {};
+  
+  // Also collect ALL intervals for the raid-wide "Any Add Alive" check
+  const allIntervals: [number, number][] = [];
+
+  const npcTypes = Array.from(new Set(Object.values(addLifespans).map(l => l.name)));
+  
+  npcTypes.forEach(name => {
+    const intervals = Object.values(addLifespans)
+      .filter(l => l.name === name)
+      .map(l => [l.spawn, l.death] as [number, number]);
+    
+    if (intervals.length === 0) return;
+    
+    intervals.sort((a, b) => a[0] - b[0]);
+    const merged: { start: number; end: number }[] = [];
+    let current = [...intervals[0]];
+    
+    for (let i = 1; i < intervals.length; i++) {
+      const next = intervals[i];
       if (next[0] <= current[1]) {
         current[1] = Math.max(current[1], next[1]);
       } else {
-        mergedIntervals.push(current as [number, number]);
-        current = next;
+        merged.push({ start: current[0], end: current[1] });
+        current = [...next];
       }
     }
-    mergedIntervals.push(current as [number, number]);
+    merged.push({ start: current[0], end: current[1] });
+    groupedWindows[name] = merged;
+    
+    // Add to allIntervals for the tunneling calculation
+    intervals.forEach(i => allIntervals.push(i));
+  });
+
+  // Merge allIntervals for the isAddAliveAt check
+  const raidWideIntervals: [number, number][] = [];
+  if (allIntervals.length > 0) {
+    allIntervals.sort((a, b) => a[0] - b[0]);
+    let current = [...allIntervals[0]];
+    for (let i = 1; i < allIntervals.length; i++) {
+      const next = allIntervals[i];
+      if (next[0] <= current[1]) {
+        current[1] = Math.max(current[1], next[1]);
+      } else {
+        raidWideIntervals.push(current as [number, number]);
+        current = [...next];
+      }
+    }
+    raidWideIntervals.push(current as [number, number]);
   }
 
   const isAddAliveAt = (timestamp: number) => {
-    return mergedIntervals.some(interval => timestamp >= interval[0] && timestamp <= interval[1]);
+    return raidWideIntervals.some(interval => timestamp >= interval[0] && timestamp <= interval[1]);
   };
 
   // 6. Attribution
@@ -139,9 +180,9 @@ export const fetchTunnelingData = async (
     dataType: 'DamageDone' as any
   });
   const table = tableData.reportData?.report?.table;
-  const entries = table?.entries || table?.data?.entries || [];
+  const tableEntries = table?.entries || table?.data?.entries || [];
   const actorMap: Record<number, any> = {};
-  entries.forEach((e: any) => {
+  tableEntries.forEach((e: any) => {
     if (e.id) actorMap[e.id] = e;
   });
 
@@ -178,6 +219,6 @@ export const fetchTunnelingData = async (
 
   return {
     entries: tunnelingEntries,
-    windows: mergedIntervals.map(i => ({ start: i[0], end: i[1] }))
+    windows: groupedWindows
   };
 };
