@@ -1,10 +1,15 @@
 import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
 import type { TunnelingEntry } from '../types/analyzer';
 
+const PRIORITY_NPC_IDS = [
+  251176, // Voidmaw
+  251239, // Shadowguard Stalwart
+  252918  // Abyssal Voidshaper
+];
+
 const PRIORITY_ADDS = [
   "Abyssal Voidshaper",
   "Shadowguard Stalwart",
-  "Voidbound Annihilator",
   "Voidmaw"
 ];
 
@@ -46,7 +51,7 @@ export const fetchTunnelingData = async (
   const fight: any = fightsData.reportData?.report?.fights?.[0];
   const npcs = fight?.npcs || [];
   const priorityAddIds = npcs
-    .filter((n: any) => PRIORITY_ADDS.includes(n.name))
+    .filter((n: any) => PRIORITY_NPC_IDS.includes(n.gameID))
     .map((n: any) => n.id);
 
   if (priorityAddIds.length === 0) {
