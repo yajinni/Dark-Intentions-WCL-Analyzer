@@ -15,6 +15,14 @@ function App() {
   const [selectedFight, setSelectedFight] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reportId, setReportId] = useState<string | null>(null);
+  const [recentReports, setRecentReports] = useState<string[]>(() => {
+    const saved = localStorage.getItem('recent_wcl_reports');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('recent_wcl_reports', JSON.stringify(recentReports));
+  }, [recentReports]);
 
   useEffect(() => {
     // Check for token in URL (from callback redirect)
@@ -68,8 +76,9 @@ function App() {
     return match ? match[1] : null;
   };
 
-  const handleFetchFights = async () => {
-    const reportId = parseReportId(logUrl);
+  const handleFetchFights = async (overrideUrl?: string) => {
+    const targetUrl = overrideUrl || logUrl;
+    const reportId = parseReportId(targetUrl);
     if (!reportId) {
       setError("Invalid WCL URL. Please provide a valid report link.");
       return;
@@ -97,6 +106,15 @@ function App() {
         // Filter for boss encounters only (encounterID > 0)
         const bossFights = reportFights.filter((f: any) => f && f.encounterID > 0);
         setFights(bossFights);
+        
+        if (bossFights.length > 0) {
+          // Add to history
+          setRecentReports(prev => {
+            const filtered = prev.filter(r => r !== targetUrl);
+            return [targetUrl, ...filtered].slice(0, 5); // Keep last 5
+          });
+        }
+
         if (bossFights.length === 0) {
           setError("No boss encounters found in this report.");
         }
@@ -172,7 +190,7 @@ function App() {
                 onKeyDown={(e) => e.key === 'Enter' && handleFetchFights()}
               />
               <button 
-                onClick={handleFetchFights} 
+                onClick={() => handleFetchFights()} 
                 className="btn-primary" 
                 style={{ padding: '8px 24px', margin: '4px' }}
                 disabled={isLoadingFights}
@@ -180,6 +198,27 @@ function App() {
                 {isLoadingFights ? <Loader2 className="loading-spinner" style={{ margin: 0, width: '20px', height: '20px' }} /> : 'Load Fights'}
               </button>
             </div>
+
+            {recentReports.length > 0 && (
+              <div className="history-container" style={{ marginTop: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', alignSelf: 'center', marginRight: '4px' }}>Recent:</span>
+                {recentReports.map((report, idx) => {
+                  const id = parseReportId(report);
+                  return (
+                    <button 
+                      key={idx} 
+                      onClick={() => {
+                        setLogUrl(report);
+                        handleFetchFights(report);
+                      }}
+                      className="history-pill"
+                    >
+                      <Clock size={12} /> {id}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {error && (
               <div style={{ marginTop: '16px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '0.9rem' }}>
