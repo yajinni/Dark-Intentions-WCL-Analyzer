@@ -12,74 +12,98 @@ export const fetchTunnelingData = async (
   accessToken: string,
   reportId: string,
   fightId: number,
-  _fightStartTime: number, // Prefixed with _ to ignore unused warning
+  fightStartTime: number,
   fightEndTime: number
 ): Promise<TunnelingEntry[]> => {
   const sdk = buildSdk(accessToken);
 
-  // 1. Fetch all Boss Damage events
-  const bossDamageData = await sdk.getReportEvents({
+  // Helper for pagination
+  const fetchAllEvents = async (options: any) => {
+    let allData: any[] = [];
+    let currentOptions = { ...options };
+    
+    while (true) {
+      const resp: any = await sdk.getReportEvents(currentOptions);
+      const events = resp.reportData?.report?.events?.data || [];
+      allData = [...allData, ...events];
+      
+      const nextTimestamp = resp.reportData?.report?.events?.nextPageTimestamp;
+      if (!nextTimestamp || events.length === 0) break;
+      currentOptions.startTime = nextTimestamp;
+    }
+    return allData;
+  };
+
+  // 1. Get Priority Add IDs from ReportFights
+  const fightsData = await sdk.getReportFights({
+    code: reportId,
+    fightIds: [fightId],
+    includeNpcs: true,
+    includePlayers: false,
+    includeDungeonPulls: false
+  });
+  
+  const fight: any = fightsData.reportData?.report?.fights?.[0];
+  const npcs = fight?.npcs || [];
+  const priorityAddIds = npcs
+    .filter((n: any) => PRIORITY_ADDS.includes(n.name))
+    .map((n: any) => n.id);
+
+  if (priorityAddIds.length === 0) {
+    console.log("No priority adds found in fight data, but fetching anyway in case events carry them.");
+  }
+
+  // 2. Fetch all Boss Damage events (Paginated)
+  const bossEvents = await fetchAllEvents({
     code: reportId,
     fightIds: [fightId],
     filterExpression: 'target.name = "Imperator Averzian"',
-    dataType: 'DamageDone' as any
+    dataType: 'DamageDone' as any,
+    startTime: fightStartTime,
+    endTime: fightEndTime
   });
 
-  const bossEvents = bossDamageData.reportData?.report?.events?.data || [];
-
-  // 2. Fetch all Deaths and DamageTaken to find add lifespans
-  // We use valid EventDataType values (DamageTaken and Deaths)
-  const addFilter = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}")`;
+  // 3. Fetch all Add Lifecycle events (Paginated)
+  // We use multiple types to be absolutely sure we catch their lifespan
+  const addFilter = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}") OR target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')})`;
   
-  const [damageTakenData, deathsData] = await Promise.all([
-    sdk.getReportEvents({
-      code: reportId,
-      fightIds: [fightId],
-      filterExpression: addFilter,
-      dataType: 'DamageTaken' as any
-    }),
-    sdk.getReportEvents({
-      code: reportId,
-      fightIds: [fightId],
-      filterExpression: addFilter,
-      dataType: 'Deaths' as any
-    })
-  ]);
+  const lifecycleTypes = ['DamageTaken', 'Deaths', 'Summons', 'Casts'];
+  const lifecyclePromises = lifecycleTypes.map(type => fetchAllEvents({
+    code: reportId,
+    fightIds: [fightId],
+    filterExpression: addFilter,
+    dataType: type as any,
+    startTime: fightStartTime,
+    endTime: fightEndTime
+  }));
 
-  const lifecycleEvents = [
-    ...(damageTakenData.reportData?.report?.events?.data || []),
-    ...(deathsData.reportData?.report?.events?.data || [])
-  ].sort((a, b) => a.timestamp - b.timestamp);
+  const allLifecycleResults = await Promise.all(lifecyclePromises);
+  const lifecycleEvents = allLifecycleResults.flat().sort((a, b) => a.timestamp - b.timestamp);
 
-  // 3. Process Add Lifespans
-  // actorID -> { spawn: number, death: number }
+  // 4. Process Add Lifespans
   const addLifespans: Record<number, { spawn: number; death: number }> = {};
 
   lifecycleEvents.forEach((ev: any) => {
-    const targetID = ev.targetID;
-    if (!targetID) return;
+    // We look for any actor involved that is a priority add
+    const relevantIds = [ev.targetID, ev.sourceID, ev.target?.id, ev.source?.id].filter(id => id && (priorityAddIds.includes(id) || priorityAddIds.length === 0));
     
-    // Check if it's a priority add
-    const name = ev.target?.name || ev.source?.name;
-    if (!PRIORITY_ADDS.includes(name)) return;
+    relevantIds.forEach(actorID => {
+      if (!addLifespans[actorID]) {
+        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime };
+      }
 
-    if (!addLifespans[targetID]) {
-      addLifespans[targetID] = { spawn: ev.timestamp, death: fightEndTime };
-    }
-
-    if (ev.type === 'death') {
-      addLifespans[targetID].death = ev.timestamp;
-    }
-    // If we see it earlier (damage taken, etc), update spawn
-    if (ev.timestamp < addLifespans[targetID].spawn) {
-      addLifespans[targetID].spawn = ev.timestamp;
-    }
+      if (ev.type === 'death' && ev.targetID === actorID) {
+        addLifespans[actorID].death = ev.timestamp;
+      }
+      
+      if (ev.timestamp < addLifespans[actorID].spawn) {
+        addLifespans[actorID].spawn = ev.timestamp;
+      }
+    });
   });
 
-  // 4. Determine "Adds Alive" windows
-  // We simplify this into an array of intervals [start, end]
+  // 5. Determine "Adds Alive" windows
   const rawIntervals = Object.values(addLifespans).map(l => [l.spawn, l.death]);
-  // Merge overlapping intervals
   const mergedIntervals: [number, number][] = [];
   if (rawIntervals.length > 0) {
     rawIntervals.sort((a, b) => a[0] - b[0]);
@@ -100,8 +124,7 @@ export const fetchTunnelingData = async (
     return mergedIntervals.some(interval => timestamp >= interval[0] && timestamp <= interval[1]);
   };
 
-  // 5. Attribution
-  // playerID -> { name, class, tunnelingDmg, totalDmg }
+  // 6. Attribution
   const attribution: Record<number, { name: string; class: string; tunneling: number; total: number }> = {};
 
   // Get actor info for class colors
@@ -130,14 +153,13 @@ export const fetchTunnelingData = async (
       };
     }
 
-    const amount = ev.amount || 0;
+    const amount = (ev.amount || 0) + (ev.absorbed || 0);
     attribution[sourceID].total += amount;
     if (isAddAliveAt(ev.timestamp)) {
       attribution[sourceID].tunneling += amount;
     }
   });
 
-  // 6. Convert to Array and Sort
   return Object.values(attribution)
     .map(p => ({
       playerName: p.name,
