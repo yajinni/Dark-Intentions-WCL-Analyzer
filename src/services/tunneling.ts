@@ -77,7 +77,9 @@ export const fetchTunnelingData = async (
   });
 
   // 3. Fetch all Add Lifecycle events (Paginated)
-  const addFilter = `target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')}) OR target.name IN ("${PRIORITY_ADDS.join('","')}")`;
+  const idPart = priorityAddIds.length > 0 ? `target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')})` : '1=0';
+  const namePart = `target.name IN ("${PRIORITY_ADDS.join('","')}") OR source.name IN ("${PRIORITY_ADDS.join('","')}")`;
+  const addFilter = `(${idPart}) OR (${namePart})`;
   
   const lifecycleTypes = ['DamageTaken', 'Deaths', 'Summons', 'Casts'];
   const lifecyclePromises = lifecycleTypes.map(type => fetchAllEvents({
@@ -96,15 +98,31 @@ export const fetchTunnelingData = async (
   const addLifespans: Record<number, { spawn: number; death: number; name: string }> = {};
 
   lifecycleEvents.forEach((ev: any) => {
-    const relevantIds = [ev.targetID, ev.sourceID].filter(id => id && priorityAddIds.includes(id));
+    // Check multiple properties for ID extraction (GraphQL often nests these)
+    const tID = ev.targetID || ev.target?.id;
+    const sID = ev.sourceID || ev.source?.id;
     
-    relevantIds.forEach(actorID => {
-      const npcName = actorToName[actorID] || ev.target?.name || ev.source?.name || "Unknown Add";
+    // We also identify by name if the ID isn't in our fight-header list
+    const tName = ev.target?.name || "";
+    const sName = ev.source?.name || "";
+
+    const relevantIds: { id: number; name: string }[] = [];
+    
+    if (tID && priorityAddIds.includes(tID)) relevantIds.push({ id: tID, name: actorToName[tID] || tName });
+    else if (PRIORITY_ADDS.includes(tName)) relevantIds.push({ id: tID || -Math.random(), name: tName }); // Use name if ID mapping missing
+
+    if (sID && priorityAddIds.includes(sID)) relevantIds.push({ id: sID, name: actorToName[sID] || sName });
+    else if (PRIORITY_ADDS.includes(sName)) relevantIds.push({ id: sID || -Math.random(), name: sName });
+
+    relevantIds.forEach(actor => {
+      const actorID = actor.id;
+      const npcName = actor.name || "Unknown Add";
+      
       if (!addLifespans[actorID]) {
         addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime, name: npcName };
       }
 
-      if (ev.type === 'death' && ev.targetID === actorID) {
+      if (ev.type === 'death' && (ev.targetID === actorID || ev.target?.id === actorID)) {
         addLifespans[actorID].death = ev.timestamp;
       }
       
