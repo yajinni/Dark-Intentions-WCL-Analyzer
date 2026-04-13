@@ -10,7 +10,10 @@ const PRIORITY_NPC_IDS = [
 const PRIORITY_ADDS = [
   "Abyssal Voidshaper",
   "Shadowguard Stalwart",
-  "Voidmaw"
+  "Voidmaw",
+  "Obsidian Endwalker",
+  "Voidbound Annihilator",
+  "Shadowguard Annihilator"
 ];
 
 export const fetchTunnelingData = async (
@@ -41,7 +44,7 @@ export const fetchTunnelingData = async (
 
   // 1. Dual-Source ID Discovery
   // We check both the fight NPCs and the Damage Done table for robustness
-  const [fightsData, tableData] = await Promise.all([
+  const [fightsData, doneTableData, takenTableData] = await Promise.all([
     sdk.getReportFights({
       code: reportId,
       fightIds: [fightId],
@@ -53,13 +56,22 @@ export const fetchTunnelingData = async (
       code: reportId,
       fightIds: [fightId],
       dataType: 'DamageDone' as any
+    }),
+    sdk.getReportTable({
+      code: reportId,
+      fightIds: [fightId],
+      dataType: 'DamageTaken' as any
     })
   ]);
   
   const fight: any = fightsData.reportData?.report?.fights?.[0];
   const npcs = fight?.npcs || [];
-  const table = tableData.reportData?.report?.table;
-  const tableEntries = table?.entries || table?.data?.entries || [];
+  const doneTable = doneTableData.reportData?.report?.table;
+  const takenTable = takenTableData.reportData?.report?.table;
+  const tableEntries = [
+    ...(doneTable?.entries || doneTable?.data?.entries || []),
+    ...(takenTable?.entries || takenTable?.data?.entries || [])
+  ];
   
   // Combine all actor info into a resilient lookup
   const actorToName: Record<number, string> = {};
@@ -120,8 +132,10 @@ export const fetchTunnelingData = async (
     // Collect all possible actor IDs from the event (target/source, top-level or nested)
     const tID = ev.targetID || ev.target?.id;
     const sID = ev.sourceID || ev.source?.id;
-    const tName = ev.target?.name || "";
-    const sName = ev.source?.name || "";
+    
+    // Resilient name extraction: try normalized names then actor ID lookup
+    const tName = ev.targetName || ev.target?.name || actorToName[tID] || "";
+    const sName = ev.sourceName || ev.source?.name || actorToName[sID] || "";
 
     const matches: { id: number; name: string }[] = [];
     
@@ -131,8 +145,13 @@ export const fetchTunnelingData = async (
 
     // Match by Name (Substring)
     PRIORITY_ADDS.forEach(pName => {
-      if (tName.includes(pName) && !matches.some(m => m.id === tID)) matches.push({ id: tID || -Math.random(), name: pName });
-      if (sName.includes(pName) && !matches.some(m => m.id === sID)) matches.push({ id: sID || -Math.random(), name: pName });
+      const lowerPName = pName.toLowerCase();
+      if (tName.toLowerCase().includes(lowerPName) && !matches.some(m => m.id === tID)) {
+        matches.push({ id: tID || -Math.random(), name: pName });
+      }
+      if (sName.toLowerCase().includes(lowerPName) && !matches.some(m => m.id === sID)) {
+        matches.push({ id: sID || -Math.random(), name: pName });
+      }
     });
 
     matches.forEach(match => {

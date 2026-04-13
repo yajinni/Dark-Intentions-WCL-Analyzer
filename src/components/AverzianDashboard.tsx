@@ -222,16 +222,27 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           })()}
 
           {/* NPC Lifecycle Timeline */}
-          {result.npcLifespans && result.npcLifespans.length > 0 && (
-            <div className="glass-panel p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <Clock size={16} className="text-purple-400" />
-                  <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Individual NPC Lifespans</h3>
-                </div>
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">Sorted by Spawn Time</div>
+          <div className="glass-panel p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Clock size={16} className="text-purple-400" />
+                <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Individual NPC Lifespans</h3>
               </div>
-              
+              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">
+                {result.npcLifespans?.length || 0} NPCs Detected
+              </div>
+            </div>
+            
+            {!result.npcLifespans || result.npcLifespans.length === 0 ? (
+              <div className="p-8 text-center bg-black/20 rounded-lg border border-white/5">
+                <Info size={32} className="mx-auto text-gray-600 mb-3" />
+                <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">No Add Lifecycle Data Found</div>
+                <p className="text-[10px] text-gray-600 mt-1 max-w-xs mx-auto">
+                  This happens if no spawn/death events for priority adds were detected in this specific fight. 
+                  Check if adds were summoned during this pull.
+                </p>
+              </div>
+            ) : (
               <div className="space-y-3">
                 {result.npcLifespans.map((npc, idx) => {
                   const duration = (npc.death - npc.spawn) / 1000;
@@ -267,8 +278,8 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
                   );
                 })}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Player Rankings */}
           <div className="glass-panel overflow-hidden">
