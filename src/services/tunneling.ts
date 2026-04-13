@@ -40,7 +40,6 @@ export const fetchTunnelingData = async (
     actorMap[npc.id] = { name: npc.name, gameID: npc.gameID };
   });
 
-  const nameFilter = PRIORITY_NPC_NAMES.map(name => `target.name CONTAINS "${name}" OR source.name CONTAINS "${name}"`).join(' OR ');
 
   // 2. Fetch Broad Lifecycle Events (Life Signals)
   const fetchAllEvents = async (dataType: string, filter?: string) => {
@@ -64,16 +63,12 @@ export const fetchTunnelingData = async (
     return all;
   };
 
-  // Fetch from multiple sources to be absolutely sure
-  const [deaths, summons, damage, casts] = await Promise.all([
-    fetchAllEvents('Deaths', nameFilter),
-    fetchAllEvents('Summons', nameFilter),
-    fetchAllEvents('DamageTaken', nameFilter),
-    fetchAllEvents('Casts', nameFilter)
+  // Fetch ONLY deaths as requested
+  const [deaths] = await Promise.all([
+    fetchAllEvents('Deaths') // Fetch all deaths for diagnostic purposes
   ]);
 
-  const allLifecycleEvents = [...deaths, ...summons, ...damage, ...casts]
-    .sort((a, b) => a.timestamp - b.timestamp);
+  const allLifecycleEvents = deaths.sort((a, b) => a.timestamp - b.timestamp);
 
   // 3. Process Lifespans (Event-First Discovery)
   const lifespans: Record<number, NpcLifespan> = {};
