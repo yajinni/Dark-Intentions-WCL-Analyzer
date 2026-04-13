@@ -70,7 +70,8 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           sets, 
           tunnelingEntries: tunnelingData.entries,
           addsAliveWindows: tunnelingData.windows,
-          npcLifespans: tunnelingData.npcLifespans
+          npcLifespans: tunnelingData.npcLifespans,
+          allDeaths: tunnelingData.allDeaths
         });
       } catch (err: any) {
         console.error("Analysis failed:", err);
@@ -236,12 +237,56 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
             </div>
             
             {!result.npcLifespans || result.npcLifespans.length === 0 ? (
-              <div className="p-16 text-center bg-black/40 rounded-2xl border border-white/5 backdrop-blur-sm">
-                <Info size={48} className="mx-auto text-gray-700 mb-4" />
-                <div className="text-lg font-bold text-gray-500 uppercase tracking-widest">No Lifespan Data Found</div>
-                <p className="text-xs text-gray-600 mt-2 max-w-sm mx-auto leading-relaxed">
-                  We scanned for Abyssal Voidshapers and other priority adds but found no death or summon events in this log.
-                </p>
+              <div className="space-y-8">
+                <div className="p-16 text-center bg-black/40 rounded-2xl border border-white/5 backdrop-blur-sm">
+                  <Info size={48} className="mx-auto text-gray-700 mb-4" />
+                  <div className="text-lg font-bold text-gray-500 uppercase tracking-widest">No Priority Targets Found</div>
+                  <p className="text-xs text-gray-600 mt-2 max-w-sm mx-auto leading-relaxed">
+                    We scanned for Abyssal Voidshapers and other priority adds but found no events. 
+                    Showing a list of all detected NPC deaths below for diagnostics.
+                  </p>
+                </div>
+
+                {/* Diagnostic Table */}
+                <div className="bg-black/20 rounded-xl border border-white/5 overflow-hidden">
+                  <div className="p-4 bg-white/5 border-b border-white/5">
+                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Diagnostic: All NPC Deaths in Fight</h4>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="text-[10px] text-gray-600 uppercase font-black border-b border-white/5 bg-black/40">
+                          <th className="px-6 py-3">Timestamp</th>
+                          <th className="px-6 py-3">NPC Name</th>
+                          <th className="px-6 py-3 font-mono">Actor ID</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {result.allDeaths?.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="px-6 py-12 text-center text-xs text-gray-600 italic">
+                              No death events of any kind found for this fight.
+                            </td>
+                          </tr>
+                        ) : (
+                          result.allDeaths?.map((death, dIdx) => (
+                            <tr key={dIdx} className="hover:bg-white/[0.02]">
+                              <td className="px-6 py-4 text-xs font-mono text-gray-500">
+                                {formatTime(death.timestamp - fightStartTime)}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-bold text-gray-300">
+                                {death.name}
+                              </td>
+                              <td className="px-6 py-4 text-xs font-mono text-gray-600">
+                                {death.id}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4">

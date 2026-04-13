@@ -43,4 +43,5 @@ export interface AverzianAnalysisResult {
   tunnelingEntries?: TunnelingEntry[];
   addsAliveWindows?: Record<string, { start: number; end: number }[]>;
   npcLifespans?: NpcLifespan[];
+  allDeaths?: { id: number; name: string; timestamp: number }[];
 }

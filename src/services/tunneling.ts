@@ -15,7 +15,12 @@ export const fetchTunnelingData = async (
   fightId: number,
   fightStartTime: number,
   fightEndTime: number
-): Promise<{ entries: TunnelingEntry[]; windows: Record<string, { start: number; end: number }[]>; npcLifespans: NpcLifespan[] }> => {
+): Promise<{ 
+  entries: TunnelingEntry[]; 
+  windows: Record<string, { start: number; end: number }[]>; 
+  npcLifespans: NpcLifespan[];
+  allDeaths?: { id: number; name: string; timestamp: number }[];
+}> => {
   const sdk = buildSdk(accessToken);
 
   // 1. Identify Actor Instances
@@ -40,7 +45,6 @@ export const fetchTunnelingData = async (
     }
   });
 
-  const nameFilter = PRIORITY_NPC_NAMES.map(name => `target.name CONTAINS "${name}"`).join(' OR ');
 
   // 2. Fetch Lifecycle Events
   const fetchAllEvents = async (dataType: string, filter?: string) => {
@@ -65,8 +69,8 @@ export const fetchTunnelingData = async (
   };
 
   const [deathEvents, summonEvents] = await Promise.all([
-    fetchAllEvents('Deaths', nameFilter),
-    fetchAllEvents('Summons', nameFilter)
+    fetchAllEvents('Deaths'), // Fetch all for diagnostics
+    fetchAllEvents('Summons') // Fetch all
   ]);
 
   // 3. Process Lifespans (Dynamic Discovery)
@@ -100,15 +104,21 @@ export const fetchTunnelingData = async (
     }
   });
 
-  // Discover from Deaths (and update death time)
+  // Discovery from Deaths (and update death time)
   deathEvents.forEach(ev => {
     const id = ev.targetID || ev.target?.id;
-    const name = ev.target?.name || ev.targetName || "";
-    if (id && name) {
-      discoverNpc(id, name, fightStartTime); // Use fight start if we didn't see summon
+    const name = ev.target?.name || ev.targetName || `Unknown (${id})`;
+    if (id) {
+      discoverNpc(id, name, fightStartTime); 
       if (lifespans[id]) lifespans[id].death = ev.timestamp;
     }
   });
+
+  const debugDeaths = deathEvents.map(ev => ({
+    id: ev.targetID || ev.target?.id,
+    name: ev.target?.name || ev.targetName || "Unknown",
+    timestamp: ev.timestamp
+  }));
 
   const lifespanList = Object.values(lifespans).sort((a, b) => a.spawn - b.spawn);
 
@@ -181,7 +191,8 @@ export const fetchTunnelingData = async (
 
   return {
     entries,
-    windows: {}, // Simplified
-    npcLifespans: lifespanList
+    windows: {}, 
+    npcLifespans: lifespanList,
+    allDeaths: debugDeaths
   };
 };
