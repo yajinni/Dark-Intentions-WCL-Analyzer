@@ -23,7 +23,7 @@ export const fetchTunnelingData = async (
 }> => {
   const sdk = buildSdk(accessToken);
 
-  // 1. Identify Actor Instances
+  // 1. Identification Cache
   const flightsData = await sdk.getReportFights({
     code: reportId,
     fightIds: [fightId],
@@ -36,17 +36,13 @@ export const fetchTunnelingData = async (
   const npcs = fight?.npcs || [];
   
   const actorMap: Record<number, { name: string; gameID: number }> = {};
-  const trackedActorIds: number[] = [];
-
   npcs.forEach((npc: any) => {
-    if (PRIORITY_NPC_NAMES.some(name => npc.name.includes(name))) {
-      actorMap[npc.id] = { name: npc.name, gameID: npc.gameID };
-      trackedActorIds.push(npc.id);
-    }
+    actorMap[npc.id] = { name: npc.name, gameID: npc.gameID };
   });
 
+  const nameFilter = PRIORITY_NPC_NAMES.map(name => `target.name CONTAINS "${name}" OR source.name CONTAINS "${name}"`).join(' OR ');
 
-  // 2. Fetch Lifecycle Events
+  // 2. Fetch Broad Lifecycle Events (Life Signals)
   const fetchAllEvents = async (dataType: string, filter?: string) => {
     let all: any[] = [];
     let startTime = fightStartTime;
@@ -62,63 +58,67 @@ export const fetchTunnelingData = async (
       const data = resp.reportData?.report?.events?.data || [];
       all = [...all, ...data];
       const next = resp.reportData?.report?.events?.nextPageTimestamp;
-      if (!next || data.length === 0) break;
+      if (!next || data.length === 0 || next >= fightEndTime) break;
       startTime = next;
     }
     return all;
   };
 
-  const [deathEvents, summonEvents] = await Promise.all([
-    fetchAllEvents('Deaths'), // Fetch all for diagnostics
-    fetchAllEvents('Summons') // Fetch all
+  // Fetch from multiple sources to be absolutely sure
+  const [deaths, summons, damage, casts] = await Promise.all([
+    fetchAllEvents('Deaths', nameFilter),
+    fetchAllEvents('Summons', nameFilter),
+    fetchAllEvents('DamageTaken', nameFilter),
+    fetchAllEvents('Casts', nameFilter)
   ]);
 
-  // 3. Process Lifespans (Dynamic Discovery)
+  const allLifecycleEvents = [...deaths, ...summons, ...damage, ...casts]
+    .sort((a, b) => a.timestamp - b.timestamp);
+
+  // 3. Process Lifespans (Event-First Discovery)
   const lifespans: Record<number, NpcLifespan> = {};
 
-  // Discovery phase from both headers and events
-  const discoverNpc = (id: number, name: string, timestamp: number) => {
-    if (!lifespans[id] && PRIORITY_NPC_NAMES.some(p => name.includes(p))) {
+  const processEvent = (ev: any) => {
+    const id = ev.targetID || ev.target?.id || ev.sourceID || ev.source?.id;
+    if (!id) return;
+
+    // Is this a priority NPC?
+    const name = ev.target?.name || ev.targetName || ev.source?.name || ev.sourceName || actorMap[id]?.name || "";
+    const isPriority = PRIORITY_NPC_NAMES.some(p => name.includes(p));
+    
+    if (!isPriority) return;
+
+    if (!lifespans[id]) {
       lifespans[id] = {
         id,
         name,
-        spawn: timestamp,
-        death: fightEndTime
+        spawn: ev.timestamp,
+        death: ev.timestamp // Initial seen
       };
+    }
+
+    // Update with earlier sightings
+    if (ev.timestamp < lifespans[id].spawn) {
+        lifespans[id].spawn = ev.timestamp;
+    }
+
+    // Update with later sightings
+    if (ev.timestamp > lifespans[id].death) {
+        lifespans[id].death = ev.timestamp;
+    }
+
+    // Explicit Death event is the final word
+    if (ev.type === 'death' && (ev.targetID === id || ev.target?.id === id)) {
+        lifespans[id].death = ev.timestamp;
+    }
+    
+    // Explicit Summon event is a great spawn time
+    if (ev.type === 'summon' && (ev.targetID === id || ev.target?.id === id)) {
+        lifespans[id].spawn = ev.timestamp;
     }
   };
 
-  // Populate from known NPCs first
-  trackedActorIds.forEach(id => {
-    discoverNpc(id, actorMap[id].name, fightStartTime);
-  });
-
-  // Discover from Summons
-  summonEvents.forEach(ev => {
-    const id = ev.targetID || ev.target?.id;
-    const name = ev.target?.name || ev.targetName || "";
-    if (id && name) {
-      discoverNpc(id, name, ev.timestamp);
-      // Ensure spawn is set to the summon time if it was already known
-      if (lifespans[id]) lifespans[id].spawn = ev.timestamp;
-    }
-  });
-
-  // Discovery from Deaths (and update death time)
-  deathEvents.forEach(ev => {
-    const id = ev.targetID || ev.target?.id;
-    const name = ev.target?.name || ev.targetName || `Unknown (${id})`;
-    if (id) {
-      discoverNpc(id, name, fightStartTime); 
-      if (lifespans[id]) lifespans[id].death = ev.timestamp;
-    }
-  });
-
-  const debugDeaths = deathEvents.map(ev => ({
-    id: ev.targetID || ev.target?.id,
-    name: ev.target?.name || ev.targetName || "Unknown",
-    timestamp: ev.timestamp
-  }));
+  allLifecycleEvents.forEach(processEvent);
 
   const lifespanList = Object.values(lifespans).sort((a, b) => a.spawn - b.spawn);
 
@@ -141,23 +141,7 @@ export const fetchTunnelingData = async (
   const isAddAliveAt = (time: number) => windows.some(w => time >= w[0] && time <= w[1]);
 
   // 5. Boss Damage Attribution
-  const bossEvents: any[] = [];
-  let bStart = fightStartTime;
-  while (true) {
-    const resp: any = await sdk.getReportEvents({
-      code: reportId,
-      fightIds: [fightId],
-      dataType: 'DamageDone' as any,
-      startTime: bStart,
-      endTime: fightEndTime,
-      filterExpression: 'target.name = "Imperator Averzian"'
-    });
-    const data = resp.reportData?.report?.events?.data || [];
-    bossEvents.push(...data);
-    const next = resp.reportData?.report?.events?.nextPageTimestamp;
-    if (!next || data.length === 0) break;
-    bStart = next;
-  }
+  const bossEvents: any[] = await fetchAllEvents('DamageDone', 'target.name = "Imperator Averzian"');
 
   const playerStats: Record<number, { name: string; class: string; tunneling: number; total: number }> = {};
   bossEvents.forEach(ev => {
@@ -165,7 +149,7 @@ export const fetchTunnelingData = async (
     if (!sID) return;
     if (!playerStats[sID]) {
         playerStats[sID] = {
-            name: ev.source?.name || `Player ${sID}`,
+            name: ev.source?.name || ev.sourceName || `Player ${sID}`,
             class: ev.source?.type || 'Unknown',
             tunneling: 0,
             total: 0
@@ -184,7 +168,7 @@ export const fetchTunnelingData = async (
         playerClass: p.class,
         tunnelingDamage: p.tunneling,
         totalBossDamage: p.total,
-        tunnelingPercentage: (p.tunneling / p.total) * 100
+        tunnelingPercentage: p.total > 0 ? (p.tunneling / p.total) * 100 : 0
     }))
     .filter(p => p.totalBossDamage > 0)
     .sort((a, b) => b.tunnelingDamage - a.tunnelingDamage);
@@ -193,6 +177,10 @@ export const fetchTunnelingData = async (
     entries,
     windows: {}, 
     npcLifespans: lifespanList,
-    allDeaths: debugDeaths
+    allDeaths: deaths.map(ev => ({
+        id: ev.targetID || ev.target?.id,
+        name: ev.target?.name || ev.targetName || "Unknown",
+        timestamp: ev.timestamp
+    }))
   };
 };

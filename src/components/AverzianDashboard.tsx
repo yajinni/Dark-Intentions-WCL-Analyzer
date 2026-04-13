@@ -239,18 +239,22 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
             {!result.npcLifespans || result.npcLifespans.length === 0 ? (
               <div className="space-y-8">
                 <div className="p-16 text-center bg-black/40 rounded-2xl border border-white/5 backdrop-blur-sm">
-                  <Info size={48} className="mx-auto text-gray-700 mb-4" />
-                  <div className="text-lg font-bold text-gray-500 uppercase tracking-widest">No Priority Targets Found</div>
+                  <div className="relative inline-block mb-4">
+                    <Info size={48} className="text-gray-700" />
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-ping opacity-20"></div>
+                  </div>
+                  <div className="text-lg font-bold text-gray-500 uppercase tracking-widest">No Life Signals Detected</div>
                   <p className="text-xs text-gray-600 mt-2 max-w-sm mx-auto leading-relaxed">
-                    We scanned for Abyssal Voidshapers and other priority adds but found no events. 
-                    Showing a list of all detected NPC deaths below for diagnostics.
+                    We scanned Deaths, Summons, DamageTaken, and Casts for all priority add names. 
+                    Even with this broad scan, 0 activity events were found for the targeted adds.
                   </p>
                 </div>
 
                 {/* Diagnostic Table */}
                 <div className="bg-black/20 rounded-xl border border-white/5 overflow-hidden">
-                  <div className="p-4 bg-white/5 border-b border-white/5">
-                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Diagnostic: All NPC Deaths in Fight</h4>
+                  <div className="p-4 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest">Diagnostic: All NPC Deaths Observed</h4>
+                    <span className="text-[10px] text-gray-600 font-bold px-2 py-0.5 bg-black/40 rounded italic">Full Scan (No Filters)</span>
                   </div>
                   <div className="max-h-96 overflow-y-auto">
                     <table className="w-full text-left">
