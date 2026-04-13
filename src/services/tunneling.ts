@@ -1,5 +1,5 @@
 import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
-import type { TunnelingEntry } from '../types/analyzer';
+import type { TunnelingEntry, NpcLifespan } from '../types/analyzer';
 
 const PRIORITY_NPC_IDS = [
   251176, // Voidmaw
@@ -19,7 +19,7 @@ export const fetchTunnelingData = async (
   fightId: number,
   fightStartTime: number,
   fightEndTime: number
-): Promise<{ entries: TunnelingEntry[]; windows: Record<string, { start: number; end: number }[]> }> => {
+): Promise<{ entries: TunnelingEntry[]; windows: Record<string, { start: number; end: number }[]>; npcLifespans: NpcLifespan[] }> => {
   const sdk = buildSdk(accessToken);
 
   // Helper for pagination
@@ -246,8 +246,16 @@ export const fetchTunnelingData = async (
     .filter(p => p.totalBossDamage > 0)
     .sort((a, b) => b.tunnelingDamage - a.tunnelingDamage);
 
+  const lifespans: NpcLifespan[] = Object.entries(addLifespans).map(([id, l]) => ({
+    id: Number(id),
+    name: l.name,
+    spawn: l.spawn,
+    death: l.death
+  })).sort((a, b) => a.spawn - b.spawn);
+
   return {
     entries: tunnelingEntries,
-    windows: groupedWindows
+    windows: groupedWindows,
+    npcLifespans: lifespans
   };
 };

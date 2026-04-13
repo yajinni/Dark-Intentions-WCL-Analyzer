@@ -29,10 +29,18 @@ export interface TunnelingEntry {
   tunnelingPercentage: number;
 }
 
+export interface NpcLifespan {
+  id: number;
+  name: string;
+  spawn: number;
+  death: number;
+}
+
 export interface AverzianAnalysisResult {
   reportId: string;
   fightId: number;
   sets: SoakSet[];
   tunnelingEntries?: TunnelingEntry[];
   addsAliveWindows?: Record<string, { start: number; end: number }[]>;
+  npcLifespans?: NpcLifespan[];
 }

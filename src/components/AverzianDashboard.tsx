@@ -69,7 +69,8 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
           fightId, 
           sets, 
           tunnelingEntries: tunnelingData.entries,
-          addsAliveWindows: tunnelingData.windows
+          addsAliveWindows: tunnelingData.windows,
+          npcLifespans: tunnelingData.npcLifespans
         });
       } catch (err: any) {
         console.error("Analysis failed:", err);
@@ -220,43 +221,51 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
             );
           })()}
 
-          {/* Add Presence Windows Card */}
-          {result.addsAliveWindows && Object.keys(result.addsAliveWindows).length > 0 && (
+          {/* NPC Lifecycle Timeline */}
+          {result.npcLifespans && result.npcLifespans.length > 0 && (
             <div className="glass-panel p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <Clock size={16} className="text-purple-400" />
-                  <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Add Presence Windows</h3>
+                  <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Individual NPC Lifespans</h3>
                 </div>
-                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">Grouped by NPC Type</div>
+                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">Sorted by Spawn Time</div>
               </div>
-              <div className="space-y-6">
-                {Object.entries(result.addsAliveWindows).map(([npcName, windows]) => (
-                  <div key={npcName} className="space-y-2">
-                    <div className="flex items-center gap-2 px-1">
-                      <div className="w-1 h-1 bg-purple-500 rounded-full"></div>
-                      <span className="text-[11px] font-black text-purple-400 uppercase tracking-wider">{npcName}</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {windows.map((window, idx) => {
-                        const duration = (window.end - window.start) / 1000;
-                        return (
-                          <div key={idx} className="bg-white/5 border border-white/10 p-3 rounded-lg flex items-center justify-between">
-                            <div className="flex flex-col">
-                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Spawn {idx + 1}</span>
-                              <span className="text-xs font-mono text-purple-200">
-                                {formatTime(window.start - fightStartTime)} - {formatTime(window.end - fightStartTime)}
-                              </span>
-                            </div>
-                            <span className="text-xs font-bold text-white bg-purple-600/30 px-2 py-1 rounded">
-                              {duration.toFixed(1)}s
-                            </span>
+              
+              <div className="space-y-3">
+                {result.npcLifespans.map((npc, idx) => {
+                  const duration = (npc.death - npc.spawn) / 1000;
+                  return (
+                    <div key={`${npc.id}-${idx}`} className="bg-white/5 border border-white/10 p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:bg-white/[0.08] transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center text-[10px] font-bold text-purple-400 border border-purple-500/20">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <div className="text-sm font-black text-white uppercase tracking-wide">{npc.name}</div>
+                          <div className="text-[10px] text-gray-500 font-mono">ID: {npc.id}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Active Duration</div>
+                          <div className="text-xs font-mono text-purple-200">
+                            {formatTime(npc.spawn - fightStartTime)} - {formatTime(npc.death - fightStartTime)}
                           </div>
-                        );
-                      })}
+                        </div>
+                        
+                        <div className="w-20 text-center">
+                          <span className={`text-sm font-black px-3 py-1 rounded-full ${
+                            duration > 30 ? 'bg-red-500/20 text-red-400' : 'bg-purple-600/20 text-purple-300'
+                          }`}>
+                            {duration.toFixed(1)}s
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
