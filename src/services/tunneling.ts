@@ -1,8 +1,13 @@
 import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
 import type { TunnelingEntry, NpcLifespan } from '../types/analyzer';
 
-const TARGET_NPC_ID = 252918; // Abyssal Voidshaper
-const OTHER_NPC_IDS = [251176, 251239]; // Voidmaw, Stalwart
+const PRIORITY_NPC_NAMES = [
+  "Abyssal Voidshaper",
+  "Shadowguard Stalwart",
+  "Voidmaw",
+  "Obsidian Endwalker",
+  "Voidbound Annihilator"
+];
 
 export const fetchTunnelingData = async (
   accessToken: string,
@@ -29,14 +34,16 @@ export const fetchTunnelingData = async (
   const trackedActorIds: number[] = [];
 
   npcs.forEach((npc: any) => {
-    if (npc.gameID === TARGET_NPC_ID || OTHER_NPC_IDS.includes(npc.gameID)) {
+    if (PRIORITY_NPC_NAMES.some(name => npc.name.includes(name))) {
       actorMap[npc.id] = { name: npc.name, gameID: npc.gameID };
       trackedActorIds.push(npc.id);
     }
   });
 
+  const nameFilter = PRIORITY_NPC_NAMES.map(name => `target.name CONTAINS "${name}"`).join(' OR ');
+
   // 2. Fetch Lifecycle Events
-  const fetchAllEvents = async (dataType: string) => {
+  const fetchAllEvents = async (dataType: string, filter?: string) => {
     let all: any[] = [];
     let startTime = fightStartTime;
     while (true) {
@@ -46,7 +53,7 @@ export const fetchTunnelingData = async (
         dataType: dataType as any,
         startTime,
         endTime: fightEndTime,
-        filterExpression: trackedActorIds.length > 0 ? `target.id IN (${trackedActorIds.join(',')}) OR source.id IN (${trackedActorIds.join(',')})` : undefined
+        filterExpression: filter
       });
       const data = resp.reportData?.report?.events?.data || [];
       all = [...all, ...data];
@@ -58,36 +65,48 @@ export const fetchTunnelingData = async (
   };
 
   const [deathEvents, summonEvents] = await Promise.all([
-    fetchAllEvents('Deaths'),
-    fetchAllEvents('Summons')
+    fetchAllEvents('Deaths', nameFilter),
+    fetchAllEvents('Summons', nameFilter)
   ]);
 
-  // 3. Process Lifespans
+  // 3. Process Lifespans (Dynamic Discovery)
   const lifespans: Record<number, NpcLifespan> = {};
 
-  // Initialize with actor info
+  // Discovery phase from both headers and events
+  const discoverNpc = (id: number, name: string, timestamp: number) => {
+    if (!lifespans[id] && PRIORITY_NPC_NAMES.some(p => name.includes(p))) {
+      lifespans[id] = {
+        id,
+        name,
+        spawn: timestamp,
+        death: fightEndTime
+      };
+    }
+  };
+
+  // Populate from known NPCs first
   trackedActorIds.forEach(id => {
-    lifespans[id] = {
-      id,
-      name: actorMap[id].name,
-      spawn: fightStartTime, // Default to start
-      death: fightEndTime    // Default to end
-    };
+    discoverNpc(id, actorMap[id].name, fightStartTime);
   });
 
-  // Update with Summon events (more accurate spawn)
+  // Discover from Summons
   summonEvents.forEach(ev => {
     const id = ev.targetID || ev.target?.id;
-    if (id && lifespans[id]) {
-      lifespans[id].spawn = ev.timestamp;
+    const name = ev.target?.name || ev.targetName || "";
+    if (id && name) {
+      discoverNpc(id, name, ev.timestamp);
+      // Ensure spawn is set to the summon time if it was already known
+      if (lifespans[id]) lifespans[id].spawn = ev.timestamp;
     }
   });
 
-  // Update with Death events
+  // Discover from Deaths (and update death time)
   deathEvents.forEach(ev => {
     const id = ev.targetID || ev.target?.id;
-    if (id && lifespans[id]) {
-      lifespans[id].death = ev.timestamp;
+    const name = ev.target?.name || ev.targetName || "";
+    if (id && name) {
+      discoverNpc(id, name, fightStartTime); // Use fight start if we didn't see summon
+      if (lifespans[id]) lifespans[id].death = ev.timestamp;
     }
   });
 
