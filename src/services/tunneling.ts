@@ -1,20 +1,8 @@
 import { buildSdk } from '@rpglogs/api-sdk/dist/tsc/main';
 import type { TunnelingEntry, NpcLifespan } from '../types/analyzer';
 
-const PRIORITY_NPC_IDS = [
-  251176, // Voidmaw
-  251239, // Shadowguard Stalwart
-  252918  // Abyssal Voidshaper
-];
-
-const PRIORITY_ADDS = [
-  "Abyssal Voidshaper",
-  "Shadowguard Stalwart",
-  "Voidmaw",
-  "Obsidian Endwalker",
-  "Voidbound Annihilator",
-  "Shadowguard Annihilator"
-];
+const TARGET_NPC_ID = 252918; // Abyssal Voidshaper
+const OTHER_NPC_IDS = [251176, 251239]; // Voidmaw, Stalwart
 
 export const fetchTunnelingData = async (
   accessToken: string,
@@ -25,256 +13,156 @@ export const fetchTunnelingData = async (
 ): Promise<{ entries: TunnelingEntry[]; windows: Record<string, { start: number; end: number }[]>; npcLifespans: NpcLifespan[] }> => {
   const sdk = buildSdk(accessToken);
 
-  // Helper for pagination
-  const fetchAllEvents = async (options: any) => {
-    let allData: any[] = [];
-    let currentOptions = { ...options };
-    
-    while (true) {
-      const resp: any = await sdk.getReportEvents(currentOptions);
-      const events = resp.reportData?.report?.events?.data || [];
-      allData = [...allData, ...events];
-      
-      const nextTimestamp = resp.reportData?.report?.events?.nextPageTimestamp;
-      if (!nextTimestamp || events.length === 0) break;
-      currentOptions.startTime = nextTimestamp;
+  // 1. Identify Actor Instances
+  const flightsData = await sdk.getReportFights({
+    code: reportId,
+    fightIds: [fightId],
+    includeNpcs: true,
+    includePlayers: false,
+    includeDungeonPulls: false
+  });
+  
+  const fight: any = flightsData.reportData?.report?.fights?.[0];
+  const npcs = fight?.npcs || [];
+  
+  const actorMap: Record<number, { name: string; gameID: number }> = {};
+  const trackedActorIds: number[] = [];
+
+  npcs.forEach((npc: any) => {
+    if (npc.gameID === TARGET_NPC_ID || OTHER_NPC_IDS.includes(npc.gameID)) {
+      actorMap[npc.id] = { name: npc.name, gameID: npc.gameID };
+      trackedActorIds.push(npc.id);
     }
-    return allData;
+  });
+
+  // 2. Fetch Lifecycle Events
+  const fetchAllEvents = async (dataType: string) => {
+    let all: any[] = [];
+    let startTime = fightStartTime;
+    while (true) {
+      const resp: any = await sdk.getReportEvents({
+        code: reportId,
+        fightIds: [fightId],
+        dataType: dataType as any,
+        startTime,
+        endTime: fightEndTime,
+        filterExpression: trackedActorIds.length > 0 ? `target.id IN (${trackedActorIds.join(',')}) OR source.id IN (${trackedActorIds.join(',')})` : undefined
+      });
+      const data = resp.reportData?.report?.events?.data || [];
+      all = [...all, ...data];
+      const next = resp.reportData?.report?.events?.nextPageTimestamp;
+      if (!next || data.length === 0) break;
+      startTime = next;
+    }
+    return all;
   };
 
-  // 1. Dual-Source ID Discovery
-  // We check both the fight NPCs and the Damage Done table for robustness
-  const [fightsData, doneTableData, takenTableData] = await Promise.all([
-    sdk.getReportFights({
-      code: reportId,
-      fightIds: [fightId],
-      includeNpcs: true,
-      includePlayers: false,
-      includeDungeonPulls: false
-    }),
-    sdk.getReportTable({
-      code: reportId,
-      fightIds: [fightId],
-      dataType: 'DamageDone' as any
-    }),
-    sdk.getReportTable({
-      code: reportId,
-      fightIds: [fightId],
-      dataType: 'DamageTaken' as any
-    })
+  const [deathEvents, summonEvents] = await Promise.all([
+    fetchAllEvents('Deaths'),
+    fetchAllEvents('Summons')
   ]);
-  
-  const fight: any = fightsData.reportData?.report?.fights?.[0];
-  const npcs = fight?.npcs || [];
-  const doneTable = doneTableData.reportData?.report?.table;
-  const takenTable = takenTableData.reportData?.report?.table;
-  const tableEntries = [
-    ...(doneTable?.entries || doneTable?.data?.entries || []),
-    ...(takenTable?.entries || takenTable?.data?.entries || [])
-  ];
-  
-  // Combine all actor info into a resilient lookup
-  const actorToName: Record<number, string> = {};
-  const priorityAddIds: number[] = [];
 
-  // Discovery from Fights NPCs
-  npcs.forEach((n: any) => {
-    if (PRIORITY_NPC_IDS.includes(n.gameID)) {
-      actorToName[n.id] = n.name;
-      priorityAddIds.push(n.id);
+  // 3. Process Lifespans
+  const lifespans: Record<number, NpcLifespan> = {};
+
+  // Initialize with actor info
+  trackedActorIds.forEach(id => {
+    lifespans[id] = {
+      id,
+      name: actorMap[id].name,
+      spawn: fightStartTime, // Default to start
+      death: fightEndTime    // Default to end
+    };
+  });
+
+  // Update with Summon events (more accurate spawn)
+  summonEvents.forEach(ev => {
+    const id = ev.targetID || ev.target?.id;
+    if (id && lifespans[id]) {
+      lifespans[id].spawn = ev.timestamp;
     }
   });
 
-  // Discovery from Table Entries (fallback for untracked actors)
-  tableEntries.forEach((e: any) => {
-    // If the name matches our priority list but wasn't in NPCs header
-    if (PRIORITY_ADDS.some(name => e.name?.includes(name))) {
-      if (!priorityAddIds.includes(e.id)) {
-        priorityAddIds.push(e.id);
-        actorToName[e.id] = e.name;
-      }
+  // Update with Death events
+  deathEvents.forEach(ev => {
+    const id = ev.targetID || ev.target?.id;
+    if (id && lifespans[id]) {
+      lifespans[id].death = ev.timestamp;
     }
   });
 
-  // 2. Fetch all Boss Damage events (Paginated)
-  const bossEvents = await fetchAllEvents({
-    code: reportId,
-    fightIds: [fightId],
-    filterExpression: 'target.name = "Imperator Averzian"',
-    dataType: 'DamageDone' as any,
-    startTime: fightStartTime,
-    endTime: fightEndTime
-  });
+  const lifespanList = Object.values(lifespans).sort((a, b) => a.spawn - b.spawn);
 
-  // 3. Fetch all Add Lifecycle events (Paginated)
-  // Use a hybrid filter: IDs we found + substring names for safety
-  const idPart = priorityAddIds.length > 0 ? `target.id IN (${priorityAddIds.join(',')}) OR source.id IN (${priorityAddIds.join(',')})` : '1=0';
-  const namePart = PRIORITY_ADDS.map(name => `target.name CONTAINS "${name}" OR source.name CONTAINS "${name}"`).join(' OR ');
-  const addFilter = `(${idPart}) OR (${namePart})`;
-  
-  const lifecycleTypes = ['DamageTaken', 'Deaths', 'Summons', 'Casts'];
-  const lifecyclePromises = lifecycleTypes.map(type => fetchAllEvents({
-    code: reportId,
-    fightIds: [fightId],
-    filterExpression: addFilter,
-    dataType: type as any,
-    startTime: fightStartTime,
-    endTime: fightEndTime
-  }));
-
-  const allLifecycleResults = await Promise.all(lifecyclePromises);
-  const lifecycleEvents = allLifecycleResults.flat().sort((a, b) => a.timestamp - b.timestamp);
-
-  // 4. Process Add Lifespans
-  const addLifespans: Record<number, { spawn: number; death: number; name: string }> = {};
-
-  lifecycleEvents.forEach((ev: any) => {
-    // Collect all possible actor IDs from the event (target/source, top-level or nested)
-    const tID = ev.targetID || ev.target?.id;
-    const sID = ev.sourceID || ev.source?.id;
-    
-    // Resilient name extraction: try normalized names then actor ID lookup
-    const tName = ev.targetName || ev.target?.name || actorToName[tID] || "";
-    const sName = ev.sourceName || ev.source?.name || actorToName[sID] || "";
-
-    const matches: { id: number; name: string }[] = [];
-    
-    // Match by ID
-    if (tID && priorityAddIds.includes(tID)) matches.push({ id: tID, name: actorToName[tID] || tName });
-    if (sID && priorityAddIds.includes(sID)) matches.push({ id: sID, name: actorToName[sID] || sName });
-
-    // Match by Name (Substring)
-    PRIORITY_ADDS.forEach(pName => {
-      const lowerPName = pName.toLowerCase();
-      if (tName.toLowerCase().includes(lowerPName) && !matches.some(m => m.id === tID)) {
-        matches.push({ id: tID || -Math.random(), name: pName });
-      }
-      if (sName.toLowerCase().includes(lowerPName) && !matches.some(m => m.id === sID)) {
-        matches.push({ id: sID || -Math.random(), name: pName });
-      }
-    });
-
-    matches.forEach(match => {
-      const actorID = match.id;
-      const categoryName = match.name;
-      
-      if (!addLifespans[actorID]) {
-        addLifespans[actorID] = { spawn: ev.timestamp, death: fightEndTime, name: categoryName };
-      }
-
-      // Update death if we see it
-      if (ev.type === 'death' && (ev.targetID === actorID || ev.target?.id === actorID)) {
-        addLifespans[actorID].death = ev.timestamp;
-      }
-      
-      // Update spawn if we see something earlier
-      if (ev.timestamp < addLifespans[actorID].spawn) {
-        addLifespans[actorID].spawn = ev.timestamp;
-      }
-    });
-  });
-
-  // 5. Determine "Adds Alive" windows per NPC Type
-  const groupedWindows: Record<string, { start: number; end: number }[]> = {};
-  const allIntervals: [number, number][] = [];
-
-  // Categorize by normalized NPC name
-  PRIORITY_ADDS.forEach(pName => {
-    const intervals = Object.values(addLifespans)
-      .filter(l => l.name.includes(pName))
-      .map(l => [l.spawn, l.death] as [number, number]);
-    
-    if (intervals.length === 0) return;
-    
-    intervals.sort((a, b) => a[0] - b[0]);
-    const merged: { start: number; end: number }[] = [];
-    let current = [...intervals[0]];
-    
-    for (let i = 1; i < intervals.length; i++) {
-      const next = intervals[i];
-      if (next[0] <= current[1]) {
-        current[1] = Math.max(current[1], next[1]);
-      } else {
-        merged.push({ start: current[0], end: current[1] });
-        current = [...next];
-      }
+  // 4. Calculate Tunneling Windows
+  const windows: [number, number][] = [];
+  if (lifespanList.length > 0) {
+    const sorted = [...lifespanList].sort((a, b) => a.spawn - b.spawn);
+    let current = [sorted[0].spawn, sorted[0].death];
+    for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].spawn <= current[1]) {
+            current[1] = Math.max(current[1], sorted[i].death);
+        } else {
+            windows.push(current as [number, number]);
+            current = [sorted[i].spawn, sorted[i].death];
+        }
     }
-    merged.push({ start: current[0], end: current[1] });
-    groupedWindows[pName] = merged;
-    
-    // Add to allIntervals for raid-wide tunneling check
-    intervals.forEach(i => allIntervals.push(i));
-  });
-
-  // Merge allIntervals for the unified isAddAliveAt check
-  const raidWideIntervals: [number, number][] = [];
-  if (allIntervals.length > 0) {
-    allIntervals.sort((a, b) => a[0] - b[0]);
-    let current = [...allIntervals[0]];
-    for (let i = 1; i < allIntervals.length; i++) {
-      const next = allIntervals[i];
-      if (next[0] <= current[1]) {
-        current[1] = Math.max(current[1], next[1]);
-      } else {
-        raidWideIntervals.push(current as [number, number]);
-        current = [...next];
-      }
-    }
-    raidWideIntervals.push(current as [number, number]);
+    windows.push(current as [number, number]);
   }
 
-  const isAddAliveAt = (timestamp: number) => {
-    return raidWideIntervals.some(interval => timestamp >= interval[0] && timestamp <= interval[1]);
-  };
+  const isAddAliveAt = (time: number) => windows.some(w => time >= w[0] && time <= w[1]);
 
-  // 6. Attribution
-  const attribution: Record<number, { name: string; class: string; tunneling: number; total: number }> = {};
-  const actorMap: Record<number, any> = {};
-  tableEntries.forEach((e: any) => {
-    if (e.id) actorMap[e.id] = e;
-  });
+  // 5. Boss Damage Attribution
+  const bossEvents: any[] = [];
+  let bStart = fightStartTime;
+  while (true) {
+    const resp: any = await sdk.getReportEvents({
+      code: reportId,
+      fightIds: [fightId],
+      dataType: 'DamageDone' as any,
+      startTime: bStart,
+      endTime: fightEndTime,
+      filterExpression: 'target.name = "Imperator Averzian"'
+    });
+    const data = resp.reportData?.report?.events?.data || [];
+    bossEvents.push(...data);
+    const next = resp.reportData?.report?.events?.nextPageTimestamp;
+    if (!next || data.length === 0) break;
+    bStart = next;
+  }
 
-  bossEvents.forEach((ev: any) => {
-    const sourceID = ev.sourceID || ev.source?.id;
-    if (!sourceID) return;
-
-    if (!attribution[sourceID]) {
-      attribution[sourceID] = {
-        name: actorMap[sourceID]?.name || ev.source?.name || `Unknown (${sourceID})`,
-        class: actorMap[sourceID]?.type || 'Unknown',
-        tunneling: 0,
-        total: 0
-      };
+  const playerStats: Record<number, { name: string; class: string; tunneling: number; total: number }> = {};
+  bossEvents.forEach(ev => {
+    const sID = ev.sourceID;
+    if (!sID) return;
+    if (!playerStats[sID]) {
+        playerStats[sID] = {
+            name: ev.source?.name || `Player ${sID}`,
+            class: ev.source?.type || 'Unknown',
+            tunneling: 0,
+            total: 0
+        };
     }
-
-    const amount = (ev.amount || 0) + (ev.absorbed || 0);
-    attribution[sourceID].total += amount;
+    const amt = (ev.amount || 0) + (ev.absorbed || 0);
+    playerStats[sID].total += amt;
     if (isAddAliveAt(ev.timestamp)) {
-      attribution[sourceID].tunneling += amount;
+        playerStats[sID].tunneling += amt;
     }
   });
 
-  const tunnelingEntries = Object.values(attribution)
+  const entries: TunnelingEntry[] = Object.values(playerStats)
     .map(p => ({
-      playerName: p.name,
-      playerClass: p.class,
-      tunnelingDamage: p.tunneling,
-      totalBossDamage: p.total,
-      tunnelingPercentage: p.total > 0 ? (p.tunneling / p.total) * 100 : 0
+        playerName: p.name,
+        playerClass: p.class,
+        tunnelingDamage: p.tunneling,
+        totalBossDamage: p.total,
+        tunnelingPercentage: (p.tunneling / p.total) * 100
     }))
     .filter(p => p.totalBossDamage > 0)
     .sort((a, b) => b.tunnelingDamage - a.tunnelingDamage);
 
-  const lifespans: NpcLifespan[] = Object.entries(addLifespans).map(([id, l]) => ({
-    id: Number(id),
-    name: l.name,
-    spawn: l.spawn,
-    death: l.death
-  })).sort((a, b) => a.spawn - b.spawn);
-
   return {
-    entries: tunnelingEntries,
-    windows: groupedWindows,
-    npcLifespans: lifespans
+    entries,
+    windows: {}, // Simplified
+    npcLifespans: lifespanList
   };
 };

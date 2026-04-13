@@ -223,55 +223,91 @@ const AverzianDashboard: React.FC<Props> = ({ accessToken, reportId, fightId, fi
 
           {/* NPC Lifecycle Timeline */}
           <div className="glass-panel p-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <Clock size={16} className="text-purple-400" />
-                <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest">Individual NPC Lifespans</h3>
+                <Clock size={20} className="text-purple-400" />
+                <h3 className="text-lg font-bold text-gray-100 uppercase tracking-widest">NPC Lifecycle Audit</h3>
               </div>
-              <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight italic">
-                {result.npcLifespans?.length || 0} NPCs Detected
+              <div className="px-4 py-1.5 bg-purple-600/20 border border-purple-500/30 rounded-full">
+                <span className="text-xs font-black text-purple-300 uppercase tracking-widest">
+                  {result.npcLifespans?.length || 0} Targets Tracking
+                </span>
               </div>
             </div>
             
             {!result.npcLifespans || result.npcLifespans.length === 0 ? (
-              <div className="p-8 text-center bg-black/20 rounded-lg border border-white/5">
-                <Info size={32} className="mx-auto text-gray-600 mb-3" />
-                <div className="text-sm font-bold text-gray-400 uppercase tracking-wider">No Add Lifecycle Data Found</div>
-                <p className="text-[10px] text-gray-600 mt-1 max-w-xs mx-auto">
-                  This happens if no spawn/death events for priority adds were detected in this specific fight. 
-                  Check if adds were summoned during this pull.
+              <div className="p-16 text-center bg-black/40 rounded-2xl border border-white/5 backdrop-blur-sm">
+                <Info size={48} className="mx-auto text-gray-700 mb-4" />
+                <div className="text-lg font-bold text-gray-500 uppercase tracking-widest">No Lifespan Data Found</div>
+                <p className="text-xs text-gray-600 mt-2 max-w-sm mx-auto leading-relaxed">
+                  We scanned for Abyssal Voidshapers and other priority adds but found no death or summon events in this log.
                 </p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-4">
                 {result.npcLifespans.map((npc, idx) => {
                   const duration = (npc.death - npc.spawn) / 1000;
+                  const isVoidshaper = npc.name.includes("Abyssal Voidshaper");
+                  
                   return (
-                    <div key={`${npc.id}-${idx}`} className="bg-white/5 border border-white/10 p-4 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-4 group hover:bg-white/[0.08] transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-8 h-8 rounded-full bg-purple-500/10 flex items-center justify-center text-[10px] font-bold text-purple-400 border border-purple-500/20">
-                          {idx + 1}
+                    <div 
+                      key={`${npc.id}-${idx}`} 
+                      className={`relative overflow-hidden p-5 rounded-xl border transition-all duration-300 group ${
+                        isVoidshaper 
+                          ? 'bg-purple-900/10 border-purple-500/40 hover:border-purple-400' 
+                          : 'bg-white/5 border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      {isVoidshaper && (
+                        <div className="absolute top-0 right-0 p-2">
+                          <Target size={12} className="text-purple-400 animate-pulse" />
                         </div>
-                        <div>
-                          <div className="text-sm font-black text-white uppercase tracking-wide">{npc.name}</div>
-                          <div className="text-[10px] text-gray-500 font-mono">ID: {npc.id}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">Active Duration</div>
-                          <div className="text-xs font-mono text-purple-200">
-                            {formatTime(npc.spawn - fightStartTime)} - {formatTime(npc.death - fightStartTime)}
+                      )}
+
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+                        <div className="flex items-center gap-5">
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg border ${
+                            isVoidshaper ? 'bg-purple-600/20 text-purple-400 border-purple-500/30' : 'bg-white/5 text-gray-500 border-white/10'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className={`text-base font-black uppercase tracking-wide ${isVoidshaper ? 'text-purple-300' : 'text-white'}`}>
+                              {npc.name}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="text-[10px] text-gray-500 font-mono uppercase">Reference: {npc.id}</span>
+                              {isVoidshaper && (
+                                <span className="text-[9px] font-black bg-purple-600 text-white px-1.5 py-0.5 rounded leading-none">PRIORITY</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         
-                        <div className="w-20 text-center">
-                          <span className={`text-sm font-black px-3 py-1 rounded-full ${
-                            duration > 30 ? 'bg-red-500/20 text-red-400' : 'bg-purple-600/20 text-purple-300'
-                          }`}>
-                            {duration.toFixed(1)}s
-                          </span>
+                        <div className="flex items-center gap-8">
+                          <div className="text-right">
+                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">Combat Presence</div>
+                            <div className="text-sm font-mono text-gray-300 flex items-center gap-2">
+                              <span>{formatTime(npc.spawn - fightStartTime)}</span>
+                              <div className="h-px w-3 bg-gray-700"></div>
+                              <span className={npc.death === fightEndTime ? 'text-red-400' : 'text-green-400'}>
+                                {npc.death === fightEndTime ? 'End' : formatTime(npc.death - fightStartTime)}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="w-24 text-center">
+                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1">Time Alive</div>
+                            <div className={`text-xl font-black px-4 py-1.5 rounded-lg border shadow-inner ${
+                              duration > 30 
+                                ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                                : isVoidshaper 
+                                  ? 'bg-purple-600/20 text-purple-300 border-purple-500/30'
+                                  : 'bg-white/5 text-gray-300 border-white/10'
+                            }`}>
+                              {duration.toFixed(1)}s
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
